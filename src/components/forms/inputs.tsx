@@ -1,47 +1,22 @@
 "use client"
 
 import * as React from "react"
-import { Control, FieldPath, FieldValues } from "react-hook-form"
-import {
-  FormField,
-  FormItem,
-  FormLabel,
-  FormControl,
-  FormDescription,
-  FormMessage,
-} from "@/components/ui/form"
+import type { Control, FieldPath, FieldValues } from "react-hook-form"
+import { FormField, FormItem, FormLabel, FormControl, FormDescription, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Switch } from "@/components/ui/switch"
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select"
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Slider } from "@/components/ui/slider"
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
-import { CalendarIcon, ChevronsUpDown, Check, X } from "lucide-react"
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { CalendarIcon, ChevronsUpDown, Check } from "lucide-react"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { cn } from "@/lib/utils"
-import { Option } from "./type"
-
+import type { Option } from "./type"
 
 type BaseProps<T extends FieldValues> = {
   control: Control<T>
@@ -87,18 +62,8 @@ export function RHFText<T extends FieldValues>({
 }
 
 /* -------------------------- Password -------------------------- */
-export function RHFPassword<T extends FieldValues>(
-  props: BaseProps<T> & { placeholder?: string }
-) {
-  const {
-    control,
-    name,
-    label,
-    description,
-    className,
-    disabled,
-    requiredMarker,
-  } = props
+export function RHFPassword<T extends FieldValues>(props: BaseProps<T> & { placeholder?: string }) {
+  const { control, name, label, description, className, disabled, requiredMarker } = props
   const [show, setShow] = React.useState(false)
   return (
     <FormField
@@ -114,11 +79,7 @@ export function RHFPassword<T extends FieldValues>(
           )}
           <FormControl>
             <div className="relative">
-              <Input
-                {...field}
-                type={show ? "text" : "password"}
-                disabled={disabled}
-              />
+              <Input {...field} type={show ? "text" : "password"} disabled={disabled} />
               <Button
                 type="button"
                 variant="ghost"
@@ -140,21 +101,8 @@ export function RHFPassword<T extends FieldValues>(
 }
 
 /* --------------------------- Number --------------------------- */
-export function RHFNumber<T extends FieldValues>(
-  props: BaseProps<T> & { min?: number; max?: number; step?: number }
-) {
-  const {
-    control,
-    name,
-    label,
-    description,
-    className,
-    disabled,
-    requiredMarker,
-    min,
-    max,
-    step,
-  } = props
+export function RHFNumber<T extends FieldValues>(props: BaseProps<T> & { min?: number; max?: number; step?: number }) {
+  const { control, name, label, description, className, disabled, requiredMarker, min, max, step } = props
   return (
     <FormField
       control={control}
@@ -246,11 +194,7 @@ export function RHFSelect<T extends FieldValues>({
               {requiredMarker ? " *" : ""}
             </FormLabel>
           )}
-          <Select
-            disabled={disabled}
-            onValueChange={field.onChange}
-            value={field.value ?? ""}
-          >
+          <Select disabled={disabled} onValueChange={field.onChange} value={field.value ?? ""}>
             <FormControl>
               <SelectTrigger>
                 <SelectValue placeholder={placeholder} />
@@ -286,15 +230,9 @@ export function RHFCheckbox<T extends FieldValues>({
       control={control}
       name={name}
       render={({ field }) => (
-        <FormItem
-          className={cn("flex flex-row items-start gap-2 space-y-0", className)}
-        >
+        <FormItem className={cn("flex flex-row items-start gap-2 space-y-0", className)}>
           <FormControl>
-            <Checkbox
-              checked={!!field.value}
-              onCheckedChange={field.onChange}
-              disabled={disabled}
-            />
+            <Checkbox checked={!!field.value} onCheckedChange={field.onChange} disabled={disabled} />
           </FormControl>
           <div className="space-y-1 leading-none">
             {label && <FormLabel>{label}</FormLabel>}
@@ -334,10 +272,7 @@ export function RHFRadioGroup<T extends FieldValues>({
               {options.map((o) => (
                 <div key={o.value} className="flex items-center space-x-2">
                   <RadioGroupItem value={o.value} id={`${name}-${o.value}`} />
-                  <FormLabel
-                    htmlFor={`${name}-${o.value}`}
-                    className="font-normal"
-                  >
+                  <FormLabel htmlFor={`${name}-${o.value}`} className="font-normal">
                     {o.label}
                   </FormLabel>
                 </div>
@@ -366,20 +301,14 @@ export function RHFSwitch<T extends FieldValues>({
       control={control}
       name={name}
       render={({ field }) => (
-        <FormItem
-          className={cn("flex items-center justify-between", className)}
-        >
+        <FormItem className={cn("flex items-center justify-between", className)}>
           <div className="space-y-0.5">
             {label && <FormLabel>{label}</FormLabel>}
             {description && <FormDescription>{description}</FormDescription>}
             <FormMessage />
           </div>
           <FormControl>
-            <Switch
-              checked={!!field.value}
-              onCheckedChange={field.onChange}
-              disabled={disabled}
-            />
+            <Switch checked={!!field.value} onCheckedChange={field.onChange} disabled={disabled} />
           </FormControl>
         </FormItem>
       )}
@@ -404,9 +333,7 @@ export function RHFSlider<T extends FieldValues>({
       control={control}
       name={name}
       render={({ field }) => {
-        const value = (
-          Array.isArray(field.value) ? field.value : [field.value ?? min]
-        ) as number[]
+        const value = (Array.isArray(field.value) ? field.value : [field.value ?? min]) as number[]
         return (
           <FormItem className={className}>
             {label && <FormLabel>{label}</FormLabel>}
@@ -420,9 +347,7 @@ export function RHFSlider<T extends FieldValues>({
                   onValueChange={(v) => field.onChange(v)}
                   disabled={disabled}
                 />
-                <div className="text-xs text-muted-foreground">
-                  Value: {value.join(", ")}
-                </div>
+                <div className="text-xs text-muted-foreground">Value: {value.join(", ")}</div>
               </div>
             </FormControl>
             {description && <FormDescription>{description}</FormDescription>}
@@ -458,10 +383,7 @@ export function RHFDate<T extends FieldValues>({
                 <FormControl>
                   <Button
                     variant={"outline"}
-                    className={cn(
-                      "w-full justify-start text-left font-normal",
-                      !date && "text-muted-foreground"
-                    )}
+                    className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}
                     disabled={disabled}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
@@ -470,12 +392,7 @@ export function RHFDate<T extends FieldValues>({
                 </FormControl>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="start">
-                <Calendar
-                  mode="single"
-                  selected={date}
-                  onSelect={(d) => field.onChange(d ?? null)}
-                  initialFocus
-                />
+                <Calendar mode="single" selected={date} onSelect={(d) => field.onChange(d ?? null)} initialFocus />
               </PopoverContent>
             </Popover>
             {description && <FormDescription>{description}</FormDescription>}
@@ -489,9 +406,15 @@ export function RHFDate<T extends FieldValues>({
 
 /* --------------------------- File Upload ---------------------- */
 export function RHFFile<T extends FieldValues>({
-  control, name, label, description, className, disabled, accept,
+  control,
+  name,
+  label,
+  description,
+  className,
+  disabled,
+  accept,
 }: BaseProps<T> & { accept?: string }) {
-  const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const inputRef = React.useRef<HTMLInputElement | null>(null)
 
   return (
     <FormField
@@ -499,7 +422,7 @@ export function RHFFile<T extends FieldValues>({
       name={name}
       render={({ field }) => {
         // ✅ Safely narrow the type for display logic
-        const file = (field.value ?? null) as File | null;
+        const file = (field.value ?? null) as File | null
 
         return (
           <FormItem className={className}>
@@ -512,8 +435,8 @@ export function RHFFile<T extends FieldValues>({
                   accept={accept}
                   disabled={disabled}
                   onChange={(e) => {
-                    const f = e.target.files?.[0] ?? null;
-                    field.onChange(f); // store File | null
+                    const f = e.target.files?.[0] ?? null
+                    field.onChange(f) // store File | null
                   }}
                 />
                 {file && (
@@ -522,8 +445,8 @@ export function RHFFile<T extends FieldValues>({
                     variant="ghost"
                     size="sm"
                     onClick={() => {
-                      if (inputRef.current) inputRef.current.value = '';
-                      field.onChange(null);
+                      if (inputRef.current) inputRef.current.value = ""
+                      field.onChange(null)
                     }}
                   >
                     Clear
@@ -541,12 +464,11 @@ export function RHFFile<T extends FieldValues>({
             {description && <FormDescription>{description}</FormDescription>}
             <FormMessage />
           </FormItem>
-        );
+        )
       }}
     />
-  );
+  )
 }
-
 
 /* --------------------------- Combobox ------------------------- */
 export function RHFCombobox<T extends FieldValues>({
@@ -575,21 +497,15 @@ export function RHFCombobox<T extends FieldValues>({
                   <Button
                     variant="outline"
                     role="combobox"
-                    className="w-full justify-between"
+                    className="w-full justify-between bg-transparent"
                     disabled={disabled}
                   >
-                    {selected ? (
-                      selected.label
-                    ) : (
-                      <span className="text-muted-foreground">
-                        {placeholder}
-                      </span>
-                    )}
+                    {selected ? selected.label : <span className="text-muted-foreground">{placeholder}</span>}
                     <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
                   </Button>
                 </FormControl>
               </PopoverTrigger>
-              <PopoverContent className="p-0 w-[--radix-popover-trigger-width]">
+              <PopoverContent className="p-0 w-(--radix-popover-trigger-width)">
                 <Command>
                   <CommandInput placeholder="Search..." />
                   <CommandList>
@@ -605,12 +521,7 @@ export function RHFCombobox<T extends FieldValues>({
                           }}
                         >
                           <Check
-                            className={cn(
-                              "mr-2 h-4 w-4",
-                              o.value === field.value
-                                ? "opacity-100"
-                                : "opacity-0"
-                            )}
+                            className={cn("mr-2 h-4 w-4", o.value === field.value ? "opacity-100" : "opacity-0")}
                           />
                           {o.label}
                         </CommandItem>
@@ -652,9 +563,7 @@ export function RHFMultiSelect<T extends FieldValues>({
           set.has(v) ? set.delete(v) : set.add(v)
           field.onChange(Array.from(set))
         }
-        const selectedLabels = options
-          .filter((o) => value.includes(o.value))
-          .map((o) => o.label)
+        const selectedLabels = options.filter((o) => value.includes(o.value)).map((o) => o.label)
 
         return (
           <FormItem className={className}>
@@ -662,26 +571,15 @@ export function RHFMultiSelect<T extends FieldValues>({
             <Popover open={open} onOpenChange={setOpen}>
               <PopoverTrigger asChild>
                 <FormControl>
-                  <Button
-                    variant="outline"
-                    className="w-full justify-between"
-                    disabled={disabled}
-                  >
-                    <span
-                      className={cn(
-                        "truncate",
-                        selectedLabels.length ? "" : "text-muted-foreground"
-                      )}
-                    >
-                      {selectedLabels.length
-                        ? selectedLabels.join(", ")
-                        : placeholder}
+                  <Button variant="outline" className="w-full justify-between bg-transparent" disabled={disabled}>
+                    <span className={cn("truncate", selectedLabels.length ? "" : "text-muted-foreground")}>
+                      {selectedLabels.length ? selectedLabels.join(", ") : placeholder}
                     </span>
                     <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
                   </Button>
                 </FormControl>
               </PopoverTrigger>
-              <PopoverContent className="p-0 w-[--radix-popover-trigger-width]">
+              <PopoverContent className="p-0 w-(--radix-popover-trigger-width)">
                 <Command>
                   <CommandInput placeholder="Search..." />
                   <CommandList>
@@ -690,10 +588,7 @@ export function RHFMultiSelect<T extends FieldValues>({
                       {options.map((o) => {
                         const checked = value.includes(o.value)
                         return (
-                          <CommandItem
-                            key={o.value}
-                            onSelect={() => toggle(o.value)}
-                          >
+                          <CommandItem key={o.value} onSelect={() => toggle(o.value)}>
                             <Checkbox checked={checked} className="mr-2" />
                             {o.label}
                           </CommandItem>

@@ -1,14 +1,21 @@
-// tailwind.config.ts
-import type { Config } from 'tailwindcss';
+import type { Config } from "tailwindcss";
+import defaultTheme from "tailwindcss/defaultTheme";
 
 const config: Config = {
-  darkMode: 'class', // ✅ not ['class']
-  content: [
-    './src/pages/**/*.{ts,tsx}',
-    './src/components/**/*.{ts,tsx}',
-    './src/app/**/*.{ts,tsx}',
-  ],
-  theme: { extend: {} },
+  darkMode: "class",
+  content: ["./src/**/*.{ts,tsx,js,jsx,mdx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}"],
+  theme: {
+    extend: {
+      borderRadius: {
+        lg: "var(--radius)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
+      },
+      fontFamily: {
+        sans: ["var(--font-sans)", ...defaultTheme.fontFamily.sans],
+      },
+    },
+  },
   plugins: [],
 };
 

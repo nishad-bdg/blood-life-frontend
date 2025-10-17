@@ -13,20 +13,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     Credentials({
       name: "Credentials",
       credentials: {
-        mobileNo: { label: "Mobile", type: "text" },
+        phone: { label: "Phone", type: "text" },
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.mobileNo || !credentials?.password) return null;
+        if (!credentials?.phone || !credentials?.password) return null;
         const { data } = await api.post("/auth/login", {
-          mobileNo: credentials.mobileNo,
+          phone: credentials.phone,
           password: credentials.password,
         });
         if (!data?.accessToken || !data?.user) return null;
         return {
           id: data.user.id ?? data.user._id ?? data.user.userId,
           name: data.user.name,
-          email: data.user.email ?? undefined,
+          email: data.user.phone ?? undefined,
           roles: data.user.roles ?? [data.user.role ?? "USER"],
           accessToken: data.accessToken,
           refreshToken: data.refreshToken,
