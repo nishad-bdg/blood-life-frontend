@@ -2,7 +2,8 @@ import { JSX, ReactNode } from "react"
 import { redirect } from "next/navigation"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/app/api/auth/[...nextauth]/route"
-import Navbar from "@/components/navbar"
+import { Navbar } from "../components/navbar"
+
 
 
 const AdminLayout = async ({
