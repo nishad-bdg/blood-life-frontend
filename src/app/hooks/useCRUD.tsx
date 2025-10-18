@@ -1,7 +1,8 @@
 /* eslint-disable */
 'use client';
 
-import { useMemo } from 'react';
+import React, { useMemo, useEffect, useRef, useState } from 'react';
+import { createRoot } from 'react-dom/client';
 import { useSession } from 'next-auth/react';
 import {
   useQuery,
@@ -13,6 +14,151 @@ import {
 import type { AxiosError } from 'axios';
 import * as XLSX from 'xlsx';
 import api from '@/lib/axios';
+
+// ---- shadcn UI import (adjust path if yours is different) ----
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+
+/* =========================================================================================
+ * Internal, promise-based global Confirm Modal (shadcn AlertDialog) — no extra components
+ * required in your app. The hook file mounts a hidden portal on first use.
+ * =======================================================================================*/
+
+type ConfirmOptions = {
+  title?: string;
+  description?: string;
+  confirmText?: string;
+  cancelText?: string;
+};
+
+type ConfirmRequest = {
+  resolve: (v: boolean) => void;
+  options: Required<ConfirmOptions> & { open: boolean };
+};
+
+const DEFAULT_OPTIONS: Required<ConfirmOptions> = {
+  title: 'Delete item',
+  description: 'Are you sure you want to delete this item? This action cannot be undone.',
+  confirmText: 'Delete',
+  cancelText: 'Cancel',
+};
+
+let __confirmRootMounted = false;
+let __confirmEnqueue: ((req: ConfirmRequest) => void) | null = null;
+
+/** Ensure we have a portal root with a ConfirmHost mounted exactly once */
+function ensureConfirmHost() {
+  if (typeof window === 'undefined' || __confirmRootMounted) return;
+  const id = 'global-confirm-host';
+  let el = document.getElementById(id);
+  if (!el) {
+    el = document.createElement('div');
+    el.id = id;
+    document.body.appendChild(el);
+  }
+  const root = createRoot(el);
+  root.render(<ConfirmHost />);
+  __confirmRootMounted = true;
+}
+
+/** Imperative API used by the hook */
+function confirmWithModal(options?: ConfirmOptions): Promise<boolean> {
+  ensureConfirmHost();
+  return new Promise<boolean>((resolve) => {
+    const req: ConfirmRequest = {
+      resolve,
+      options: {
+        ...DEFAULT_OPTIONS,
+        ...(options ?? {}),
+        open: true,
+      },
+    };
+    // If host not ready yet, enqueue after a microtask
+    const enqueue = () => __confirmEnqueue?.(req);
+    if (!__confirmEnqueue) {
+      // tiny retry loop until host registers
+      let tries = 0;
+      const t = setInterval(() => {
+        if (__confirmEnqueue || tries++ > 50) {
+          clearInterval(t);
+          enqueue();
+        }
+      }, 10);
+    } else {
+      enqueue();
+    }
+  });
+}
+
+/** The actual UI host that lives in a portal and consumes requests */
+function ConfirmHost() {
+  const queueRef = useRef<ConfirmRequest[]>([]);
+  const [current, setCurrent] = useState<ConfirmRequest | null>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    __confirmEnqueue = (req: ConfirmRequest) => {
+      queueRef.current.push(req);
+      if (!current) {
+        setCurrent(queueRef.current.shift() || null);
+      }
+    };
+    return () => {
+      __confirmEnqueue = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (current?.options.open) {
+      setOpen(true);
+    }
+  }, [current]);
+
+  const closeAndResolve = (value: boolean) => {
+    setOpen(false);
+    if (current) current.resolve(value);
+    setTimeout(() => {
+      setCurrent(queueRef.current.shift() || null);
+    }, 0);
+  };
+
+  return (
+    <AlertDialog open={open} onOpenChange={(v) => !v && closeAndResolve(false)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{current?.options.title}</AlertDialogTitle>
+          <AlertDialogDescription>{current?.options.description}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={() => closeAndResolve(false)}>
+            {current?.options.cancelText}
+          </AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(e) => {
+              e.preventDefault();
+              closeAndResolve(true);
+            }}
+          >
+            {current?.options.confirmText}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+/* =========================================================================================
+ * Your original hook (public API unchanged). Only DELETE path now uses the modal above.
+ * =======================================================================================*/
 
 type QueryParams =
   | string
@@ -111,11 +257,15 @@ export function useCrud<TData, TPayload = unknown>(opts: CrudOptions<TData, TPay
   } = opts;
 
   const { data: session } = useSession();
-  const token = session?.accessToken ?? null; // ✅ If no token, null
+  const token = (session as any)?.accessToken ?? null; // unchanged
   const qc = useQueryClient();
   const memoParams = useMemo(() => queryParams, [JSON.stringify(queryParams)]);
 
-  // ✅ Helper: attach token or skip
+  // Mount confirm host immediately on first hook use (safe in client)
+  useEffect(() => {
+    ensureConfirmHost();
+  }, []);
+
   const authHeader = token ? { Authorization: `Bearer ${token}` } : {};
 
   // ---------- LIST ----------
@@ -222,12 +372,31 @@ export function useCrud<TData, TPayload = unknown>(opts: CrudOptions<TData, TPay
       onSuccess: () => qc.invalidateQueries({ queryKey: [url, ...queryKey], exact: false }),
     });
 
-  // ---------- DELETE ----------
+  // ---------- DELETE (uses the built-in shadcn modal from above) ----------
+  const CANCELLED = '__DELETE_CANCELLED__';
   const remove: UseMutationResult<void, unknown, string> = useMutation({
     mutationFn: async (id) => {
+      // Show prettier modal; fallback to safe cancel if something's off.
+      let ok = false;
+      try {
+        ok = await confirmWithModal({
+          title: 'Delete item',
+          description:
+            'Are you absolutely sure? This action cannot be undone and will permanently delete the record.',
+          confirmText: 'Delete',
+          cancelText: 'Cancel',
+        });
+      } catch {
+        ok = false;
+      }
+      if (!ok) throw new Error(CANCELLED);
+
       await api.delete(`${url}/${id}`, { headers: authHeader });
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: [url, ...queryKey], exact: false }),
+    onError: (err) => {
+      if ((err as Error)?.message === CANCELLED) return; // silent on cancel
+    },
   });
 
   // ---------- EXPORT ----------
