@@ -26,7 +26,7 @@ export function Navbar() {
 
   const navItems = [
     { label: "Dashboard", href: "#" },
-    { label: "Donors", href: "#" },
+    { label: "Donors", href: "/donors" },
     { label: "Donations", href: "#" },
   ]
 

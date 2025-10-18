@@ -1,0 +1,1 @@
+export const DONORS_QUERY_KEY = 'donors'
