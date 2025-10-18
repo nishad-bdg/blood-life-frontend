@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { JSX, useState } from "react"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -22,7 +22,7 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>
 
-export default function SignInPage() {
+const SignInPage =(): JSX.Element => {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
 
@@ -101,3 +101,5 @@ export default function SignInPage() {
     </div>
   )
 }
+
+export default SignInPage
