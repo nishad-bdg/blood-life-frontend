@@ -32,12 +32,12 @@ export default function DonorsPage() {
 
   const { paginatedList, remove, onExportAll } = useCrud<Donor, Partial<Donor>>(
     {
-      url: apiEndpoints.donors, // e.g. "/users"
+      url: apiEndpoints.donors,
       queryKey: [DONORS_QUERY_KEY, search, page, limit],
       pagination: { currentPage: page, pageSize: limit },
-      queryParams: { searchKeyword: search }, // <- server search param
+      queryParams: { searchKeyword: search },
       listEnabled: false,
-      paginatedListEnabled: Boolean(token), // only fetch when token present
+      paginatedListEnabled: Boolean(token)
     },
   );
 
