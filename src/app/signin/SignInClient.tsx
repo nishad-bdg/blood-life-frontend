@@ -13,16 +13,13 @@ import { RHFText, RHFPassword } from "@/components/forms/inputs"
 import { useRouter } from "next/navigation"
 
 const schema = z.object({
-  phone: z
-    .string()
-    .min(10, "Enter a valid mobile number")
-    .regex(/^[0-9]+$/, "Only digits allowed"),
+  phone: z.string().min(10, "Enter a valid mobile number").regex(/^[0-9]+$/, "Only digits allowed"),
   password: z.string().min(6, "Password must be at least 6 characters"),
 })
 
 type FormValues = z.infer<typeof schema>
 
-const SignInPage =(): JSX.Element => {
+const SignInClient = (): JSX.Element => {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
 
@@ -31,14 +28,14 @@ const SignInPage =(): JSX.Element => {
     defaultValues: { phone: "", password: "" },
   })
 
-  const onSubmit = async (values: FormValues) => {
+  const onSubmit = async (values: FormValues): Promise<void> => {
     setLoading(true)
     try {
       await toast.promise(signIn("credentials", { redirect: false, ...values }), {
         loading: "Signing in…",
         success: (res) => {
           if (res?.error) throw new Error(res.error)
-          router.push("/")
+          router.push("/dashboard")
           return "Welcome back!"
         },
         error: (err) => err.message || "Login failed",
@@ -60,39 +57,17 @@ const SignInPage =(): JSX.Element => {
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
               <div className="space-y-4">
-                <RHFText
-                  control={form.control}
-                  name="phone"
-                  label="Mobile Number"
-                  placeholder="01XXXXXXXXX"
-                  requiredMarker
-                />
-
-                <RHFPassword
-                  control={form.control}
-                  name="password"
-                  label="Password"
-                  placeholder="Enter your password"
-                  requiredMarker
-                />
+                <RHFText control={form.control} name="phone" label="Mobile Number" placeholder="01XXXXXXXXX" requiredMarker />
+                <RHFPassword control={form.control} name="password" label="Password" placeholder="Enter your password" requiredMarker />
               </div>
 
-              <Button
-                type="submit"
-                disabled={loading}
-                className="w-full h-[50px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer"
-              >
+              <Button type="submit" disabled={loading} className="w-full h-[50px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
                 {loading ? "Signing in..." : "Sign In"}
               </Button>
 
               <div className="pt-2 text-center text-sm text-muted-foreground">
                 Don&apos;t have an account?{" "}
-                <a
-                  href="/signup"
-                  className="text-primary hover:underline font-medium transition-colors"
-                >
-                  Sign up
-                </a>
+                <a href="/signup" className="text-primary hover:underline font-medium transition-colors">Sign up</a>
               </div>
             </form>
           </Form>
@@ -102,4 +77,4 @@ const SignInPage =(): JSX.Element => {
   )
 }
 
-export default SignInPage
+export default SignInClient

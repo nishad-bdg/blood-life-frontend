@@ -2,7 +2,7 @@ import { redirect } from "next/navigation"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/app/api/auth/[...nextauth]/route"
 import type { JSX } from "react"
-import SignInClient from "./signin/SignInClient"
+import SignInClient from "./SignInClient"
 
 const SignInPage = async (): Promise<JSX.Element> => {
   const session = await getServerSession(authOptions)
