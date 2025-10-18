@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // ✅ Create a pre-configured instance
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'https://api.example.com',
+  baseURL: `${process.env.NEXT_PUBLIC_API_URL}/api/v1/` || 'https://api.example.com/api/v1',
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
