@@ -12,7 +12,6 @@ import { GenericTable } from '@/app/components/shared/GenericTable'
 import DonorModal, { DonorFormDTO } from './components/DonorModal'
 import { RoleEnum } from '@/app/enums/index.enum'
 
-
 type Donor = {
   _id: string
   name: string
@@ -23,10 +22,26 @@ type Donor = {
   presentDistrict?: string
   presentUpazilla?: string
   lastDonationDate?: string | null
+  roles?: RoleEnum[]
 }
 
-// ✅ API payload for create/update
 type CreateDonorPayload = Omit<DonorFormDTO, '_id'>
+
+const roleVariant = (
+  role: string,
+): 'default' | 'secondary' | 'destructive' | 'outline' => {
+  switch (role) {
+    case 'admin':
+      return 'destructive'
+    case 'co-admin':
+      return 'default'
+    case 'moderator':
+      return 'secondary'
+    case 'donar': // your USER role value
+    default:
+      return 'outline'
+  }
+}
 
 export default function DonorsPage() {
   const { data: session, status } = useSession()
@@ -39,13 +54,10 @@ export default function DonorsPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editRow, setEditRow] = useState<Donor | undefined>(undefined)
 
-  const {
-    paginatedList,
-    remove,
-    onExportAll,
-    create,
-    update,
-  } = useCrud<Donor, CreateDonorPayload>({
+  const { paginatedList, remove, onExportAll, create, update } = useCrud<
+    Donor,
+    CreateDonorPayload
+  >({
     url: apiEndpoints.donors,
     queryKey: [DONORS_QUERY_KEY, search, page, limit],
     pagination: { currentPage: page, pageSize: limit },
@@ -71,6 +83,22 @@ export default function DonorsPage() {
         { key: 'presentDivision', label: 'Division' },
         { key: 'presentDistrict', label: 'District' },
         { key: 'presentUpazilla', label: 'Present Upazilla' },
+        {
+          key: 'roles',
+          label: 'Roles',
+          render: (d: Donor) =>
+            d?.roles?.length ? (
+              <div className="flex flex-wrap gap-1">
+                {d.roles.map((r) => (
+                  <Badge key={r} variant={roleVariant(r)} className="capitalize">
+                    {r.replace('-', ' ')}
+                  </Badge>
+                ))}
+              </div>
+            ) : (
+              '—'
+            ),
+        },
         {
           key: 'lastDonationDate',
           label: 'Last Donation',
@@ -100,7 +128,7 @@ export default function DonorsPage() {
     lastDonationDate: p.lastDonationDate
       ? new Date(p.lastDonationDate).toISOString()
       : null,
-    roles: (p.roles && p.roles.length > 0) ? p.roles : [RoleEnum.USER],
+    roles: p.roles && p.roles.length > 0 ? p.roles : [RoleEnum.USER],
   })
 
   // Handlers

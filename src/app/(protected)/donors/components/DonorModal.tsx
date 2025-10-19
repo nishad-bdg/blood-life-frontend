@@ -24,14 +24,12 @@ import { Loader2 } from "lucide-react";
 
 // Dependent geo data helpers
 import { getDivisions, getDistricts, getUpazilas } from "@/app/data/bd-geo";
-import { RoleEnum } from "@/app/enums/index.enum";
-
-// 🔐 Roles enum (runtime enum expected)
+import { BloodGroupEnum, RoleEnum } from "@/app/enums/index.enum";
 
 
-// ---- Constants / Types ----
-const BLOOD_GROUPS = ["A+","A-","B+","B-","AB+","AB-","O+","O-"] as const;
-type BloodGroup = (typeof BLOOD_GROUPS)[number];
+const BLOOD_GROUPS = Object.values(BloodGroupEnum) as BloodGroupEnum[];
+
+
 
 // Safely turn enum into options (works for string or numeric enums)
 const roleValues = Object.values(RoleEnum).filter(
@@ -45,7 +43,7 @@ const baseDonorSchema = z.object({
     .min(11, "Enter a valid mobile number")
     .max(11, "Enter a valid mobile number")
     .regex(/^01\d{9}$/, "Bangladesh number (11 digits, starts with 01)"),
-  bloodGroup: z.enum(BLOOD_GROUPS).or(z.string().min(1, "Select blood group")),
+  bloodGroup: z.enum(BloodGroupEnum).or(z.string().min(1, "Select blood group")),
   age: z
     .union([z.number().int().min(1).max(120), z.nan()])
     .transform((v) => (Number.isNaN(v) ? undefined : v))
@@ -104,7 +102,7 @@ export type DonorFormDTO = {
   _id?: string;
   name: string;
   phone: string;
-  bloodGroup: BloodGroup | string;
+  bloodGroup: BloodGroupEnum | string;
   age?: number | null;
   presentDivision?: string | null;
   presentDistrict?: string | null;
@@ -144,7 +142,7 @@ export default function DonorModal({
     () => ({
       name: initialData?.name ?? "",
       phone: initialData?.phone ?? "",
-      bloodGroup: (initialData?.bloodGroup as BloodGroup | string) ?? "",
+      bloodGroup: (initialData?.bloodGroup as BloodGroupEnum | string) ?? "",
       age: typeof initialData?.age === "number" ? initialData?.age : (undefined as any),
       presentDivision: initialData?.presentDivision ?? "",
       presentDistrict: initialData?.presentDistrict ?? "",
@@ -209,7 +207,7 @@ export default function DonorModal({
     const basePayload: Omit<DonorFormDTO, "_id"> = {
       name: values.name.trim(),
       phone: values.phone.trim(),
-      bloodGroup: values.bloodGroup as BloodGroup,
+      bloodGroup: values.bloodGroup as BloodGroupEnum,
       age: values.age,
       presentDivision: values.presentDivision || undefined,
       presentDistrict: values.presentDistrict || undefined,
