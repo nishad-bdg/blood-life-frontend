@@ -321,6 +321,7 @@ export function useCrud<TData, TPayload = unknown>(opts: CrudOptions<TData, TPay
   const create: UseMutationResult<TData, unknown, TPayload> = useMutation({
     mutationFn: async (payload) => {
       try {
+        console.info('create mutation payload', payload);
         const { data } = await api.post<TData>(url, payload, { headers: authHeader });
         return data;
       } catch (e) {

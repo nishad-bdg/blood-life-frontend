@@ -1,82 +1,115 @@
-"use client";
+'use client'
 
-import * as React from "react";
-import { useSession } from "next-auth/react";
-import { DONORS_QUERY_KEY } from "@/app/constants/queryKeys";
-import { useCrud, type PaginatedResponse } from "@/app/hooks/useCRUD";
-import { apiEndpoints } from "@/app/utils/api";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Loader2, Eye, Pencil, Trash2, Download } from "lucide-react";
-import { GenericTable } from "@/app/components/shared/GenericTable";
+import { useState, useMemo } from 'react'
+import { useSession } from 'next-auth/react'
+import { DONORS_QUERY_KEY } from '@/app/constants/queryKeys'
+import { useCrud, type PaginatedResponse } from '@/app/hooks/useCRUD'
+import { apiEndpoints } from '@/app/utils/api'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Loader2, Eye, Pencil, Trash2, Download, Plus } from 'lucide-react'
+import { GenericTable } from '@/app/components/shared/GenericTable'
+import DonorModal, { DonorFormDTO } from './components/DonorModal'
+import { RoleEnum } from '@/app/enums/index.enum'
+
 
 type Donor = {
-  _id: string;
-  name: string;
-  phone: string;
-  bloodGroup: string;
-  age?: number;
-  presentDivision?: string;
-  presentDistrict?: string;
-  lastDonationDate?: string | null;
-};
+  _id: string
+  name: string
+  phone: string
+  bloodGroup: string
+  age?: number
+  presentDivision?: string
+  presentDistrict?: string
+  presentUpazilla?: string
+  lastDonationDate?: string | null
+}
+
+// ✅ API payload for create/update
+type CreateDonorPayload = Omit<DonorFormDTO, '_id'>
 
 export default function DonorsPage() {
-  const { data: session, status } = useSession();
-  const token = session?.accessToken ?? null;
+  const { data: session, status } = useSession()
+  const token = (session as any)?.accessToken ?? null
 
-  // server-side search + pagination state
-  const [search, setSearch] = React.useState("");
-  const [page, setPage] = React.useState(1);
-  const [limit, setLimit] = React.useState(10);
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(10)
 
-  const { paginatedList, remove, onExportAll } = useCrud<Donor, Partial<Donor>>(
-    {
-      url: apiEndpoints.donors,
-      queryKey: [DONORS_QUERY_KEY, search, page, limit],
-      pagination: { currentPage: page, pageSize: limit },
-      queryParams: { searchKeyword: search },
-      listEnabled: false,
-      paginatedListEnabled: Boolean(token)
-    },
-  );
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editRow, setEditRow] = useState<Donor | undefined>(undefined)
 
-  const isLoading = paginatedList?.isLoading || status === "loading";
-  const error = paginatedList?.error as Error | null;
-  const data = paginatedList?.data as PaginatedResponse<Donor> | undefined;
+  const {
+    paginatedList,
+    remove,
+    onExportAll,
+    create,
+    update,
+  } = useCrud<Donor, CreateDonorPayload>({
+    url: apiEndpoints.donors,
+    queryKey: [DONORS_QUERY_KEY, search, page, limit],
+    pagination: { currentPage: page, pageSize: limit },
+    queryParams: { searchKeyword: search },
+    listEnabled: false,
+    paginatedListEnabled: Boolean(token),
+  })
 
-  const columns = [
-    { key: "name", label: "Name" },
-    { key: "phone", label: "Phone" },
-    {
-      key: "bloodGroup",
-      label: "Blood",
-      render: (d: Donor) => <Badge variant="secondary">{d?.bloodGroup}</Badge>,
-    },
-    { key: "presentDivision", label: "Division" },
-    { key: "presentDistrict", label: "District" },
-    { key: "presentUpazilla", label: "Present Upazilla" },
-    {
-      key: "lastDonationDate",
-      label: "Last Donation",
-      render: (d: Donor) =>
-        d?.lastDonationDate
-          ? new Date(d?.lastDonationDate)?.toLocaleDateString()
-          : "—",
-    },
-  ] as const;
+  const isLoading = paginatedList?.isLoading || status === 'loading'
+  const error = paginatedList?.error as Error | null
+  const data = paginatedList?.data as PaginatedResponse<Donor> | undefined
+
+  const columns = useMemo(
+    () =>
+      [
+        { key: 'name', label: 'Name' },
+        { key: 'phone', label: 'Phone' },
+        {
+          key: 'bloodGroup',
+          label: 'Blood',
+          render: (d: Donor) => <Badge variant="secondary">{d?.bloodGroup}</Badge>,
+        },
+        { key: 'presentDivision', label: 'Division' },
+        { key: 'presentDistrict', label: 'District' },
+        { key: 'presentUpazilla', label: 'Present Upazilla' },
+        {
+          key: 'lastDonationDate',
+          label: 'Last Donation',
+          render: (d: Donor) =>
+            d?.lastDonationDate
+              ? new Date(d?.lastDonationDate)?.toLocaleDateString()
+              : '—',
+        },
+      ] as const,
+    [],
+  )
 
   if (!token) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="text-center space-y-2">
           <p className="text-lg font-medium">You’re signed out</p>
-          <p className="text-sm text-muted-foreground">
-            Please sign in to view donors.
-          </p>
+          <p className="text-sm text-muted-foreground">Please sign in to view donors.</p>
         </div>
       </div>
-    );
+    )
+  }
+
+  // Normalize the form modal payload to API payload (ISO date + roles default)
+  const toCreatePayload = (p: Omit<DonorFormDTO, '_id'>): CreateDonorPayload => ({
+    ...p,
+    lastDonationDate: p.lastDonationDate
+      ? new Date(p.lastDonationDate).toISOString()
+      : null,
+    roles: (p.roles && p.roles.length > 0) ? p.roles : [RoleEnum.USER],
+  })
+
+  // Handlers
+  const handleCreate = async (payload: Omit<DonorFormDTO, '_id'>) => {
+    await create.mutateAsync(toCreatePayload(payload))
+  }
+
+  const handleUpdate = async (id: string, payload: Omit<DonorFormDTO, '_id'>) => {
+    await update.mutateAsync({ id, payload: toCreatePayload(payload) })
   }
 
   return (
@@ -88,32 +121,36 @@ export default function DonorsPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => onExportAll({ searchKeyword: search }, "donors")}
+            onClick={() => onExportAll({ searchKeyword: search }, 'donors')}
             disabled={isLoading}
           >
             <Download className="mr-2 h-4 w-4" />
             Export
           </Button>
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditRow(undefined)
+              setModalOpen(true)
+            }}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add Donor
+          </Button>
         </div>
       </div>
 
-      {/* Loading / Error */}
       {isLoading && (
         <div className="flex items-center gap-2 text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading donors…
         </div>
       )}
-      {error && (
-        <div className="text-sm text-red-500">Error: {error.message}</div>
-      )}
+      {error && <div className="text-sm text-red-500">Error: {error.message}</div>}
 
-      {/* Table (server-side search + pagination) */}
       <GenericTable<Donor>
         title="Donor Directory"
-        description={
-          data ? `Showing ${data.items.length} of ${data.total}` : undefined
-        }
+        description={data ? `Showing ${data.items.length} of ${data.total}` : undefined}
         data={data?.items ?? []}
         columns={columns as any}
         actions={(d) => (
@@ -121,14 +158,17 @@ export default function DonorsPage() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => console.log("view", d?._id)}
+              onClick={() => console.log('view', d?._id)}
             >
               <Eye className="h-4 w-4" />
             </Button>
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => console.log("edit", d?._id)}
+              onClick={() => {
+                setEditRow(d)
+                setModalOpen(true)
+              }}
             >
               <Pencil className="h-4 w-4" />
             </Button>
@@ -144,24 +184,31 @@ export default function DonorsPage() {
           </div>
         )}
         emptyMessage="No donors found"
-        // 🔍 search (server-driven)
         searchable
         onSearch={(q) => {
-          setSearch(q);
-          setPage(1); // reset page when searching
+          setSearch(q)
+          setPage(1)
         }}
-        // 📄 pagination (server-driven)
         pagination="server"
         total={data?.total ?? 0}
         page={page}
         pageSize={limit}
         onPageChange={setPage}
         onPageSizeChange={(n) => {
-          setLimit(n);
-          setPage(1);
+          setLimit(n)
+          setPage(1)
         }}
         pageSizeOptions={[10, 20, 50]}
       />
+
+      {/* Create/Edit Modal */}
+      <DonorModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        initialData={editRow}
+        onCreate={handleCreate}
+        onUpdate={handleUpdate}
+      />
     </div>
-  );
+  )
 }
