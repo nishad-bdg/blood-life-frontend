@@ -3,7 +3,7 @@
 import * as React from "react";
 import { JSX, useMemo, useState, useEffect } from "react";
 import { z } from "zod";
-import { useForm, Controller } from "react-hook-form";
+import { useForm, Controller, type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -26,15 +26,46 @@ import { Loader2 } from "lucide-react";
 import { getDivisions, getDistricts, getUpazilas } from "@/app/data/bd-geo";
 import { BloodGroupEnum, RoleEnum } from "@/app/enums/index.enum";
 
+/* ───────────────────────── Types ───────────────────────── */
 
-const BLOOD_GROUPS = Object.values(BloodGroupEnum) as BloodGroupEnum[];
+export type DonorFormDTO = {
+  _id?: string;
+  name: string;
+  phone: string;
+  bloodGroup: BloodGroupEnum | string;
+  age?: number | null;
 
+  presentDivision?: string | null;
+  presentDistrict?: string | null;
+  presentUpazilla?: string | null;
 
+  permanentDivision?: string | null;
+  permanentDistrict?: string | null;
+  permanentUpazilla?: string | null;
 
-// Safely turn enum into options (works for string or numeric enums)
-const roleValues = Object.values(RoleEnum).filter(
-  (v) => typeof v === "string"
-) as string[] as RoleEnum[];
+  lastDonationDate?: string | null;
+  email: string;
+  roles: RoleEnum[];
+  password?: string;
+  confirmPassword?: string;
+};
+
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  initialData?: Partial<DonorFormDTO>;
+  onCreate?: (payload: Omit<DonorFormDTO, "_id">) => Promise<void>;
+  onUpdate?: (id: string, payload: Omit<DonorFormDTO, "_id">) => Promise<void>;
+};
+
+/* ───────────────────────── Constants ───────────────────────── */
+
+const BLOOD_GROUPS: BloodGroupEnum[] = Object.values(BloodGroupEnum) as BloodGroupEnum[];
+const ROLE_VALUES: RoleEnum[] = Object.values(RoleEnum).filter(
+  (v): v is RoleEnum => typeof v === "string"
+);
+
+/* ───────────────────────── Schema ───────────────────────── */
 
 const baseDonorSchema = z.object({
   name: z.string().min(2, "Name is required"),
@@ -48,25 +79,26 @@ const baseDonorSchema = z.object({
     .union([z.number().int().min(1).max(120), z.nan()])
     .transform((v) => (Number.isNaN(v) ? undefined : v))
     .optional(),
+
+  // Present
   presentDivision: z.string().optional(),
   presentDistrict: z.string().optional(),
   presentUpazilla: z.string().optional(),
+
+  // Permanent
+  permanentDivision: z.string().optional(),
+  permanentDistrict: z.string().optional(),
+  permanentUpazilla: z.string().optional(),
+
   lastDonationDate: z.date().optional().nullable(),
   email: z.string().min(1, "email should not be empty").email({ message: "email must be an email" }),
-  // NEW: roles required, min 1
   roles: z.array(z.nativeEnum(RoleEnum)).min(1, "Select at least one role"),
 });
 
 const createDonorSchema = baseDonorSchema
   .extend({
-    password: z
-      .string()
-      .min(6, "password must be longer than or equal to 6 characters")
-      .max(100, "password must be shorter than or equal to 100 characters"),
-    confirmPassword: z
-      .string()
-      .min(6, "confirmPassword must be longer than or equal to 6 characters")
-      .max(100, "confirmPassword must be shorter than or equal to 100 characters"),
+    password: z.string().min(6).max(100),
+    confirmPassword: z.string().min(6).max(100),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "Passwords do not match",
@@ -78,17 +110,15 @@ const updateDonorSchema = baseDonorSchema
     password: z
       .string()
       .optional()
-      .refine(
-        (v) => !v || v.length === 0 || (v.length >= 6 && v.length <= 100),
-        "Password must be between 6 and 100 characters if provided"
-      ),
+      .refine((v) => !v || v.length === 0 || (v.length >= 6 && v.length <= 100), {
+        message: "Password must be between 6 and 100 characters if provided",
+      }),
     confirmPassword: z
       .string()
       .optional()
-      .refine(
-        (v) => !v || v.length === 0 || (v.length >= 6 && v.length <= 100),
-        "Confirm Password must be between 6 and 100 characters if provided"
-      ),
+      .refine((v) => !v || v.length === 0 || (v.length >= 6 && v.length <= 100), {
+        message: "Confirm Password must be between 6 and 100 characters if provided",
+      }),
   })
   .refine(
     (data) => {
@@ -98,69 +128,51 @@ const updateDonorSchema = baseDonorSchema
     { message: "Passwords do not match", path: ["confirmPassword"] }
   );
 
-export type DonorFormDTO = {
-  _id?: string;
-  name: string;
-  phone: string;
-  bloodGroup: BloodGroupEnum | string;
-  age?: number | null;
-  presentDivision?: string | null;
-  presentDistrict?: string | null;
-  presentUpazilla?: string | null;
-  lastDonationDate?: string | null; // we’ll send ISO string or null
-  email: string;
-  roles: RoleEnum[]; // NEW
-  password?: string;
-  confirmPassword?: string;
-};
-
 type FormValuesCreate = z.infer<typeof createDonorSchema>;
 type FormValuesUpdate = z.infer<typeof updateDonorSchema>;
 type FormValues = FormValuesCreate | FormValuesUpdate;
 
-type Props = {
-  open: boolean;
-  onClose: () => void;
-  initialData?: Partial<DonorFormDTO>; // presence of _id => update mode
-  onCreate?: (payload: Omit<DonorFormDTO, "_id">) => Promise<void>;
-  onUpdate?: (id: string, payload: Omit<DonorFormDTO, "_id">) => Promise<void>;
-};
+/* ───────────────────────── Component (fat arrow) ───────────────────────── */
 
-export default function DonorModal({
+const DonorModal = ({
   open,
   onClose,
   initialData,
   onCreate,
   onUpdate,
-}: Props): JSX.Element {
+}: Props): JSX.Element => {
   const mode: "create" | "edit" = initialData?._id ? "edit" : "create";
-  const [submitting, setSubmitting] = useState(false);
+  const [submitting, setSubmitting] = useState<boolean>(false);
+  const [sameAsPresent, setSameAsPresent] = useState<boolean>(false);
+  const defaultRoles: RoleEnum[] = [RoleEnum.USER];
 
-  const defaultRoles = [RoleEnum.USER]; // ✅ as requested
-
-  const defaultValues: Partial<FormValues> = useMemo(
-    () => ({
+  const defaultValues: Partial<FormValues> = useMemo((): Partial<FormValues> => {
+    return {
       name: initialData?.name ?? "",
       phone: initialData?.phone ?? "",
       bloodGroup: (initialData?.bloodGroup as BloodGroupEnum | string) ?? "",
-      age: typeof initialData?.age === "number" ? initialData?.age : (undefined as any),
+      age: typeof initialData?.age === "number" ? initialData?.age : (undefined as unknown as number),
+
+      // present
       presentDivision: initialData?.presentDivision ?? "",
       presentDistrict: initialData?.presentDistrict ?? "",
       presentUpazilla: initialData?.presentUpazilla ?? "",
-      lastDonationDate: initialData?.lastDonationDate
-        ? new Date(initialData.lastDonationDate)
-        : null,
+
+      // permanent
+      permanentDivision: initialData?.permanentDivision ?? "",
+      permanentDistrict: initialData?.permanentDistrict ?? "",
+      permanentUpazilla: initialData?.permanentUpazilla ?? "",
+
+      lastDonationDate: initialData?.lastDonationDate ? new Date(initialData.lastDonationDate) : null,
       email: initialData?.email ?? "",
-      roles: (initialData?.roles && initialData.roles.length > 0)
-        ? (initialData.roles as RoleEnum[])
-        : defaultRoles, // ✅ ensure at least [User]
+      roles: initialData?.roles && initialData.roles.length > 0 ? (initialData.roles as RoleEnum[]) : defaultRoles,
       password: "",
       confirmPassword: "",
-    }),
-    [initialData]
-  );
+    };
+  }, [initialData]);
 
-  const schema = mode === "create" ? createDonorSchema : updateDonorSchema;
+  const schema: typeof createDonorSchema | typeof updateDonorSchema =
+    mode === "create" ? createDonorSchema : updateDonorSchema;
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -168,55 +180,102 @@ export default function DonorModal({
     mode: "onBlur",
   });
 
-  // keep form in sync when dialog reuses same instance for different rows
-  useEffect(() => {
+  // keep form synced on row change
+  useEffect((): void => {
     form.reset(defaultValues);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(defaultValues)]);
 
-  // Dependent selects
-  const divValue = form.watch("presentDivision");
-  const distValue = form.watch("presentDistrict");
+  /* ── Present address cascading ── */
+  const presentDiv = form.watch("presentDivision");
+  const presentDist = form.watch("presentDistrict");
 
   const divisionOptions = useMemo(
-    () => getDivisions().map((d) => ({ label: d, value: d })),
+    (): { label: string; value: string }[] => getDivisions().map((d) => ({ label: d, value: d })),
     []
   );
   const districtOptions = useMemo(
-    () => getDistricts(divValue).map((d) => ({ label: d, value: d })),
-    [divValue]
+    (): { label: string; value: string }[] => getDistricts(presentDiv).map((d) => ({ label: d, value: d })),
+    [presentDiv]
   );
   const upazilaOptions = useMemo(
-    () => getUpazilas(divValue, distValue).map((u) => ({ label: u, value: u })),
-    [divValue, distValue]
+    (): { label: string; value: string }[] =>
+      getUpazilas(presentDiv, presentDist).map((u) => ({ label: u, value: u })),
+    [presentDiv, presentDist]
   );
 
-  // reset children when parent changes
-  useEffect(() => {
+  useEffect((): void => {
     form.setValue("presentDistrict", "");
     form.setValue("presentUpazilla", "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [divValue]);
-  useEffect(() => {
+  }, [presentDiv]);
+
+  useEffect((): void => {
     form.setValue("presentUpazilla", "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [distValue]);
+  }, [presentDist]);
 
-  // Submit
-  const handleSubmit = async (values: FormValues) => {
+  /* ── Permanent address cascading ── */
+  const permanentDiv = form.watch("permanentDivision");
+  const permanentDist = form.watch("permanentDistrict");
+
+  const permDistrictOptions = useMemo(
+    (): { label: string; value: string }[] => getDistricts(permanentDiv).map((d) => ({ label: d, value: d })),
+    [permanentDiv]
+  );
+  const permUpazilaOptions = useMemo(
+    (): { label: string; value: string }[] =>
+      getUpazilas(permanentDiv, permanentDist).map((u) => ({ label: u, value: u })),
+    [permanentDiv, permanentDist]
+  );
+
+  useEffect((): void => {
+    form.setValue("permanentDistrict", "");
+    form.setValue("permanentUpazilla", "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permanentDiv]);
+
+  useEffect((): void => {
+    form.setValue("permanentUpazilla", "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permanentDist]);
+
+  /* ── Same as present ── */
+  useEffect((): void => {
+    if (sameAsPresent) {
+      const pd = form.getValues("presentDivision") || "";
+      const pdi = form.getValues("presentDistrict") || "";
+      const pu = form.getValues("presentUpazilla") || "";
+      form.setValue("permanentDivision", pd);
+      form.setValue("permanentDistrict", pdi);
+      form.setValue("permanentUpazilla", pu);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sameAsPresent, presentDiv, presentDist, form.watch("presentUpazilla")]);
+
+  /* ── Handlers ── */
+
+  const toMultiSelect = (e: React.ChangeEvent<HTMLSelectElement>): RoleEnum[] =>
+    Array.from(e.target.selectedOptions).map((o) => o.value as RoleEnum);
+
+  const handleSubmit: SubmitHandler<FormValues> = async (values): Promise<void> => {
     const basePayload: Omit<DonorFormDTO, "_id"> = {
       name: values.name.trim(),
       phone: values.phone.trim(),
       bloodGroup: values.bloodGroup as BloodGroupEnum,
       age: values.age,
+
       presentDivision: values.presentDivision || undefined,
       presentDistrict: values.presentDistrict || undefined,
       presentUpazilla: values.presentUpazilla || undefined,
-      lastDonationDate: values.lastDonationDate
-        ? values.lastDonationDate.toISOString()
-        : null,
+
+      permanentDivision: values.permanentDivision || undefined,
+      permanentDistrict: values.permanentDistrict || undefined,
+      permanentUpazilla: values.permanentUpazilla || undefined,
+
+      lastDonationDate: values.lastDonationDate ? values.lastDonationDate.toISOString() : null,
       email: values.email.trim(),
-      roles: (values.roles?.length ? values.roles : [RoleEnum.USER]) as RoleEnum[], // ✅ enforce at least [User]
+      roles: (values.roles?.length ? values.roles : [RoleEnum.USER]) as RoleEnum[],
     };
 
     const payload: Omit<DonorFormDTO, "_id"> =
@@ -253,13 +312,11 @@ export default function DonorModal({
     }
   };
 
-  // Helper for multi-select changes
-  const toMultiSelect = (e: React.ChangeEvent<HTMLSelectElement>): RoleEnum[] =>
-    Array.from(e.target.selectedOptions).map((o) => o.value as RoleEnum);
+  /* ── Render ── */
 
   return (
-    <Dialog open={open} onOpenChange={(v) => (!v ? onClose() : null)}>
-      <DialogContent className="sm:max-w-xl">
+    <Dialog open={open} onOpenChange={(v): void => { if (!v) onClose(); }}>
+      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{mode === "create" ? "Add Donor" : "Edit Donor"}</DialogTitle>
           <DialogDescription>
@@ -270,14 +327,14 @@ export default function DonorModal({
         <Card className="border border-border">
           <CardContent className="pt-6">
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-5">
+              <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
                 {/* Identity & Blood */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Name */}
                   <Controller
                     control={form.control}
                     name="name"
-                    render={({ field, fieldState }) => (
+                    render={({ field, fieldState }): JSX.Element => (
                       <div className="space-y-1">
                         <label className="text-sm font-medium">
                           Full Name <span className="text-red-500">*</span>
@@ -299,7 +356,7 @@ export default function DonorModal({
                   <Controller
                     control={form.control}
                     name="phone"
-                    render={({ field, fieldState }) => (
+                    render={({ field, fieldState }): JSX.Element => (
                       <div className="space-y-1">
                         <label className="text-sm font-medium">
                           Mobile Number <span className="text-red-500">*</span>
@@ -322,15 +379,12 @@ export default function DonorModal({
                   <Controller
                     control={form.control}
                     name="bloodGroup"
-                    render={({ field, fieldState }) => (
+                    render={({ field, fieldState }): JSX.Element => (
                       <div className="space-y-1">
                         <label className="text-sm font-medium">
                           Blood Group <span className="text-red-500">*</span>
                         </label>
-                        <select
-                          {...field}
-                          className="w-full rounded-md border px-3 py-2 bg-white"
-                        >
+                        <select {...field} className="w-full rounded-md border px-3 py-2 bg-white">
                           <option value="">Select blood group</option>
                           {BLOOD_GROUPS.map((bg) => (
                             <option key={bg} value={bg}>
@@ -349,7 +403,7 @@ export default function DonorModal({
                   <Controller
                     control={form.control}
                     name="age"
-                    render={({ field, fieldState }) => (
+                    render={({ field, fieldState }): JSX.Element => (
                       <div className="space-y-1">
                         <label className="text-sm font-medium">Age</label>
                         <input
@@ -357,7 +411,7 @@ export default function DonorModal({
                           className="w-full rounded-md border px-3 py-2"
                           placeholder="e.g., 25"
                           value={field.value ?? ""}
-                          onChange={(e) => {
+                          onChange={(e): void => {
                             const v = e.target.value;
                             field.onChange(v === "" ? Number.NaN : Number(v));
                           }}
@@ -377,7 +431,7 @@ export default function DonorModal({
                   <Controller
                     control={form.control}
                     name="email"
-                    render={({ field, fieldState }) => (
+                    render={({ field, fieldState }): JSX.Element => (
                       <div className="space-y-1 md:col-span-2">
                         <label className="text-sm font-medium">
                           Email <span className="text-red-500">*</span>
@@ -399,7 +453,7 @@ export default function DonorModal({
                   <Controller
                     control={form.control}
                     name="roles"
-                    render={({ field, fieldState }) => (
+                    render={({ field, fieldState }): JSX.Element => (
                       <div className="space-y-1 md:col-span-2">
                         <label className="text-sm font-medium">
                           Roles <span className="text-red-500">*</span>
@@ -407,19 +461,17 @@ export default function DonorModal({
                         <select
                           multiple
                           className="w-full rounded-md border px-3 py-2 bg-white min-h-[44px]"
-                          value={field.value ?? defaultRoles}
-                          onChange={(e) => field.onChange(toMultiSelect(e))}
+                          value={field.value ?? [RoleEnum.USER]}
+                          onChange={(e): void => field.onChange(toMultiSelect(e))}
                           onBlur={field.onBlur}
                         >
-                          {roleValues.map((r) => (
+                          {ROLE_VALUES.map((r) => (
                             <option key={r} value={r}>
                               {r}
                             </option>
                           ))}
                         </select>
-                        <p className="text-xs text-muted-foreground">
-                          Tip: Hold Ctrl/Cmd to select multiple.
-                        </p>
+                        <p className="text-xs text-muted-foreground">Tip: Hold Ctrl/Cmd to select multiple.</p>
                         {fieldState.error && (
                           <p className="text-sm text-red-600">{fieldState.error.message}</p>
                         )}
@@ -431,7 +483,7 @@ export default function DonorModal({
                   <Controller
                     control={form.control}
                     name="password"
-                    render={({ field, fieldState }) => (
+                    render={({ field, fieldState }): JSX.Element => (
                       <div className="space-y-1">
                         <label className="text-sm font-medium">
                           {mode === "create" ? "Password" : "Password (leave blank to keep)"}
@@ -452,7 +504,7 @@ export default function DonorModal({
                   <Controller
                     control={form.control}
                     name="confirmPassword"
-                    render={({ field, fieldState }) => (
+                    render={({ field, fieldState }): JSX.Element => (
                       <div className="space-y-1">
                         <label className="text-sm font-medium">
                           {mode === "create" ? "Confirm Password" : "Confirm Password (leave blank)"}
@@ -472,104 +524,199 @@ export default function DonorModal({
                   />
                 </div>
 
-                {/* Address (Dependent selects) */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Division */}
-                  <Controller
-                    control={form.control}
-                    name="presentDivision"
-                    render={({ field, fieldState }) => (
-                      <div className="space-y-1">
-                        <label className="text-sm font-medium">
-                          Division <span className="text-red-500">*</span>
-                        </label>
-                        <select
-                          {...field}
-                          className="w-full rounded-md border px-3 py-2 bg-white"
-                        >
-                          <option value="">Select division</option>
-                          {divisionOptions.map((o) => (
-                            <option key={o.value} value={o.value}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </select>
-                        {fieldState.error && (
-                          <p className="text-sm text-red-600">{fieldState.error.message}</p>
-                        )}
-                      </div>
-                    )}
-                  />
+                {/* Address (PRESENT) */}
+                <div className="space-y-3">
+                  <h4 className="text-sm font-semibold">Present Address</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Division */}
+                    <Controller
+                      control={form.control}
+                      name="presentDivision"
+                      render={({ field, fieldState }): JSX.Element => (
+                        <div className="space-y-1">
+                          <label className="text-sm font-medium">
+                            Division <span className="text-red-500">*</span>
+                          </label>
+                          <select {...field} className="w-full rounded-md border px-3 py-2 bg-white">
+                            <option value="">Select division</option>
+                            {divisionOptions.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                          {fieldState.error && (
+                            <p className="text-sm text-red-600">{fieldState.error.message}</p>
+                          )}
+                        </div>
+                      )}
+                    />
 
-                  {/* District */}
-                  <Controller
-                    control={form.control}
-                    name="presentDistrict"
-                    render={({ field, fieldState }) => (
-                      <div className="space-y-1">
-                        <label className="text-sm font-medium">
-                          District <span className="text-red-500">*</span>
-                        </label>
-                        <select
-                          {...field}
-                          disabled={!divValue}
-                          className="w-full rounded-md border px-3 py-2 bg-white disabled:opacity-60"
-                        >
-                          <option value="">{divValue ? "Select district" : "Select division first"}</option>
-                          {districtOptions.map((o) => (
-                            <option key={o.value} value={o.value}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </select>
-                        {fieldState.error && (
-                          <p className="text-sm text-red-600">{fieldState.error.message}</p>
-                        )}
-                      </div>
-                    )}
-                  />
+                    {/* District */}
+                    <Controller
+                      control={form.control}
+                      name="presentDistrict"
+                      render={({ field, fieldState }): JSX.Element => (
+                        <div className="space-y-1">
+                          <label className="text-sm font-medium">
+                            District <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            {...field}
+                            disabled={!presentDiv}
+                            className="w-full rounded-md border px-3 py-2 bg-white disabled:opacity-60"
+                          >
+                            <option value="">{presentDiv ? "Select district" : "Select division first"}</option>
+                            {districtOptions.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                          {fieldState.error && (
+                            <p className="text-sm text-red-600">{fieldState.error.message}</p>
+                          )}
+                        </div>
+                      )}
+                    />
 
-                  {/* Upazilla */}
-                  <Controller
-                    control={form.control}
-                    name="presentUpazilla"
-                    render={({ field, fieldState }) => (
-                      <div className="space-y-1">
-                        <label className="text-sm font-medium">
-                          Upazilla <span className="text-red-500">*</span>
-                        </label>
-                        <select
-                          {...field}
-                          disabled={!distValue}
-                          className="w-full rounded-md border px-3 py-2 bg-white disabled:opacity-60"
-                        >
-                          <option value="">{distValue ? "Select upazilla" : "Select district first"}</option>
-                          {upazilaOptions.map((o) => (
-                            <option key={o.value} value={o.value}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </select>
-                        {fieldState.error && (
-                          <p className="text-sm text-red-600">{fieldState.error.message}</p>
-                        )}
-                      </div>
-                    )}
-                  />
+                    {/* Upazilla */}
+                    <Controller
+                      control={form.control}
+                      name="presentUpazilla"
+                      render={({ field, fieldState }): JSX.Element => (
+                        <div className="space-y-1">
+                          <label className="text-sm font-medium">
+                            Upazilla <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            {...field}
+                            disabled={!presentDist}
+                            className="w-full rounded-md border px-3 py-2 bg-white disabled:opacity-60"
+                          >
+                            <option value="">{presentDist ? "Select upazilla" : "Select district first"}</option>
+                            {upazilaOptions.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                          {fieldState.error && (
+                            <p className="text-sm text-red-600">{fieldState.error.message}</p>
+                          )}
+                        </div>
+                      )}
+                    />
+                  </div>
+                </div>
+
+                {/* Address (PERMANENT) */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-semibold">Permanent Address</h4>
+                    <label className="inline-flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={sameAsPresent}
+                        onChange={(e): void => setSameAsPresent(e.target.checked)}
+                      />
+                      Same as present
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Permanent Division */}
+                    <Controller
+                      control={form.control}
+                      name="permanentDivision"
+                      render={({ field, fieldState }): JSX.Element => (
+                        <div className="space-y-1">
+                          <label className="text-sm font-medium">Division</label>
+                          <select
+                            {...field}
+                            disabled={sameAsPresent}
+                            className="w-full rounded-md border px-3 py-2 bg-white disabled:opacity-60"
+                          >
+                            <option value="">Select division</option>
+                            {divisionOptions.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                          {fieldState.error && (
+                            <p className="text-sm text-red-600">{fieldState.error.message}</p>
+                          )}
+                        </div>
+                      )}
+                    />
+
+                    {/* Permanent District */}
+                    <Controller
+                      control={form.control}
+                      name="permanentDistrict"
+                      render={({ field, fieldState }): JSX.Element => (
+                        <div className="space-y-1">
+                          <label className="text-sm font-medium">District</label>
+                          <select
+                            {...field}
+                            disabled={sameAsPresent || !permanentDiv}
+                            className="w-full rounded-md border px-3 py-2 bg-white disabled:opacity-60"
+                          >
+                            <option value="">{permanentDiv ? "Select district" : "Select division first"}</option>
+                            {permDistrictOptions.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                          {fieldState.error && (
+                            <p className="text-sm text-red-600">{fieldState.error.message}</p>
+                          )}
+                        </div>
+                      )}
+                    />
+
+                    {/* Permanent Upazilla */}
+                    <Controller
+                      control={form.control}
+                      name="permanentUpazilla"
+                      render={({ field, fieldState }): JSX.Element => (
+                        <div className="space-y-1">
+                          <label className="text-sm font-medium">Upazilla</label>
+                          <select
+                            {...field}
+                            disabled={sameAsPresent || !permanentDist}
+                            className="w-full rounded-md border px-3 py-2 bg-white disabled:opacity-60"
+                          >
+                            <option value="">{permanentDist ? "Select upazilla" : "Select district first"}</option>
+                            {permUpazilaOptions.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                          {fieldState.error && (
+                            <p className="text-sm text-red-600">{fieldState.error.message}</p>
+                          )}
+                        </div>
+                      )}
+                    />
+                  </div>
                 </div>
 
                 {/* Last Donation */}
                 <Controller
                   control={form.control}
                   name="lastDonationDate"
-                  render={({ field, fieldState }) => (
+                  render={({ field, fieldState }): JSX.Element => (
                     <div className="space-y-1">
                       <label className="text-sm font-medium">Last Donation Date</label>
                       <input
                         type="date"
                         className="w-full rounded-md border px-3 py-2"
                         value={field.value ? format(field.value, "yyyy-MM-dd") : ""}
-                        onChange={(e) => {
+                        onChange={(e): void => {
                           const v = e.target.value;
                           field.onChange(v ? new Date(v + "T00:00:00") : null);
                         }}
@@ -606,4 +753,6 @@ export default function DonorModal({
       </DialogContent>
     </Dialog>
   );
-}
+};
+
+export default DonorModal;

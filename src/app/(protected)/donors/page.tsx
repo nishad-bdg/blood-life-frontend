@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { DONORS_QUERY_KEY } from '@/app/constants/queryKeys'
 import { useCrud, type PaginatedResponse } from '@/app/hooks/useCRUD'
@@ -10,7 +10,10 @@ import { Badge } from '@/components/ui/badge'
 import { Loader2, Eye, Pencil, Trash2, Download, Plus } from 'lucide-react'
 import { GenericTable } from '@/app/components/shared/GenericTable'
 import DonorModal, { DonorFormDTO } from './components/DonorModal'
-import { RoleEnum } from '@/app/enums/index.enum'
+import { RoleEnum, BloodGroupEnum } from '@/app/enums/index.enum'
+
+// Geo helpers
+import { getDivisions, getDistricts, getUpazilas } from '@/app/data/bd-geo'
 
 type Donor = {
   _id: string
@@ -37,7 +40,7 @@ const roleVariant = (
       return 'default'
     case 'moderator':
       return 'secondary'
-    case 'donar': // your USER role value
+    case 'donar':
     default:
       return 'outline'
   }
@@ -47,10 +50,94 @@ export default function DonorsPage() {
   const { data: session, status } = useSession()
   const token = (session as any)?.accessToken ?? null
 
+  // table state
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(10)
 
+  // ------- FILTER STATE (matches DonorFilterDto) -------
+  const [bloodGroup, setBloodGroup] = useState<BloodGroupEnum | ''>('')
+
+  // Present
+  const [presentDivision, setPresentDivision] = useState('')
+  const [presentDistrict, setPresentDistrict] = useState('')
+  const [presentUpazilla, setPresentUpazilla] = useState('')
+
+  // Permanent
+  const [permanentDivision, setPermanentDivision] = useState('')
+  const [permanentDistrict, setPermanentDistrict] = useState('')
+  const [permanentUpazilla, setPermanentUpazilla] = useState('')
+
+  // Created-at range
+  const [startDate, setStartDate] = useState<string>('') // yyyy-mm-dd
+  const [endDate, setEndDate] = useState<string>('')     // yyyy-mm-dd
+
+  // ✅ Last donation date range
+  const [lastDonationStart, setLastDonationStart] = useState<string>('') // yyyy-mm-dd
+  const [lastDonationEnd, setLastDonationEnd] = useState<string>('')     // yyyy-mm-dd
+
+  // reset child selects when parent changes (Present)
+  useEffect(() => {
+    setPresentDistrict('')
+    setPresentUpazilla('')
+  }, [presentDivision])
+
+  useEffect(() => {
+    setPresentUpazilla('')
+  }, [presentDistrict])
+
+  // reset child selects when parent changes (Permanent)
+  useEffect(() => {
+    setPermanentDistrict('')
+    setPermanentUpazilla('')
+  }, [permanentDivision])
+
+  useEffect(() => {
+    setPermanentUpazilla('')
+  }, [permanentDistrict])
+
+  const divisionOptions = useMemo(
+    () => getDivisions().map((d) => ({ label: d, value: d })),
+    []
+  )
+  const presentDistrictOptions = useMemo(
+    () => getDistricts(presentDivision).map((d) => ({ label: d, value: d })),
+    [presentDivision]
+  )
+  const presentUpazilaOptions = useMemo(
+    () => getUpazilas(presentDivision, presentDistrict).map((u) => ({ label: u, value: u })),
+    [presentDivision, presentDistrict]
+  )
+  const permanentDistrictOptions = useMemo(
+    () => getDistricts(permanentDivision).map((d) => ({ label: d, value: d })),
+    [permanentDivision]
+  )
+  const permanentUpazilaOptions = useMemo(
+    () => getUpazilas(permanentDivision, permanentDistrict).map((u) => ({ label: u, value: u })),
+    [permanentDivision, permanentDistrict]
+  )
+
+  const bloodOptions = useMemo(
+    () => (Object.values(BloodGroupEnum) as string[]).map((bg) => ({ label: bg, value: bg })),
+    []
+  )
+
+  const clearFilters = () => {
+    setBloodGroup('')
+    setPresentDivision('')
+    setPresentDistrict('')
+    setPresentUpazilla('')
+    setPermanentDivision('')
+    setPermanentDistrict('')
+    setPermanentUpazilla('')
+    setStartDate('')
+    setEndDate('')
+    setLastDonationStart('')
+    setLastDonationEnd('')
+    setPage(1)
+  }
+
+  // modal state
   const [modalOpen, setModalOpen] = useState(false)
   const [editRow, setEditRow] = useState<Donor | undefined>(undefined)
 
@@ -59,9 +146,39 @@ export default function DonorsPage() {
     CreateDonorPayload
   >({
     url: apiEndpoints.donors,
-    queryKey: [DONORS_QUERY_KEY, search, page, limit],
+    // include filters in the key so queries refetch when they change
+    queryKey: [
+      DONORS_QUERY_KEY,
+      search,
+      page,
+      limit,
+      bloodGroup,
+      presentDivision,
+      presentDistrict,
+      presentUpazilla,
+      permanentDivision,
+      permanentDistrict,
+      permanentUpazilla,
+      startDate,
+      endDate,
+      lastDonationStart, // ✅
+      lastDonationEnd,   // ✅
+    ],
     pagination: { currentPage: page, pageSize: limit },
-    queryParams: { searchKeyword: search },
+    queryParams: {
+      searchKeyword: search || undefined,
+      bloodGroup: bloodGroup || undefined,
+      presentDivision: presentDivision || undefined,
+      presentDistrict: presentDistrict || undefined,
+      presentUpazilla: presentUpazilla || undefined,
+      permanentDivision: permanentDivision || undefined,
+      permanentDistrict: permanentDistrict || undefined,
+      permanentUpazilla: permanentUpazilla || undefined,
+      startDate: startDate || undefined,
+      endDate: endDate || undefined,
+      lastDonationStart: lastDonationStart || undefined, // ✅
+      lastDonationEnd: lastDonationEnd || undefined,     // ✅
+    },
     listEnabled: false,
     paginatedListEnabled: Boolean(token),
   })
@@ -149,7 +266,25 @@ export default function DonorsPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => onExportAll({ searchKeyword: search }, 'donors')}
+            onClick={() =>
+              onExportAll(
+                {
+                  searchKeyword: search || undefined,
+                  bloodGroup: bloodGroup || undefined,
+                  presentDivision: presentDivision || undefined,
+                  presentDistrict: presentDistrict || undefined,
+                  presentUpazilla: presentUpazilla || undefined,
+                  permanentDivision: permanentDivision || undefined,
+                  permanentDistrict: permanentDistrict || undefined,
+                  permanentUpazilla: permanentUpazilla || undefined,
+                  startDate: startDate || undefined,
+                  endDate: endDate || undefined,
+                  lastDonationStart: lastDonationStart || undefined, // ✅
+                  lastDonationEnd: lastDonationEnd || undefined,     // ✅
+                },
+                'donors',
+              )
+            }
             disabled={isLoading}
           >
             <Download className="mr-2 h-4 w-4" />
@@ -164,6 +299,216 @@ export default function DonorsPage() {
           >
             <Plus className="mr-2 h-4 w-4" />
             Add Donor
+          </Button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="grid grid-cols-1 gap-3 rounded-lg border p-3 md:grid-cols-4">
+        {/* Blood Group */}
+        <div className="space-y-1">
+          <label className="text-sm font-medium">Blood Group</label>
+          <select
+            className="w-full rounded-md border px-3 py-2 bg-white"
+            value={bloodGroup}
+            onChange={(e) => {
+              setBloodGroup(e.target.value as BloodGroupEnum | '')
+              setPage(1)
+            }}
+          >
+            <option value="">All</option>
+            {bloodOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Present Division */}
+        <div className="space-y-1">
+          <label className="text-sm font-medium">Present Division</label>
+          <select
+            className="w-full rounded-md border px-3 py-2 bg-white"
+            value={presentDivision}
+            onChange={(e) => {
+              setPresentDivision(e.target.value)
+              setPage(1)
+            }}
+          >
+            <option value="">All</option>
+            {divisionOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Present District */}
+        <div className="space-y-1">
+          <label className="text-sm font-medium">Present District</label>
+          <select
+            className="w-full rounded-md border px-3 py-2 bg-white"
+            value={presentDistrict}
+            onChange={(e) => {
+              setPresentDistrict(e.target.value)
+              setPage(1)
+            }}
+            disabled={!presentDivision}
+          >
+            <option value="">{presentDivision ? 'All' : 'Select division first'}</option>
+            {presentDistrictOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Present Upazilla */}
+        <div className="space-y-1">
+          <label className="text-sm font-medium">Present Upazilla</label>
+          <select
+            className="w-full rounded-md border px-3 py-2 bg-white"
+            value={presentUpazilla}
+            onChange={(e) => {
+              setPresentUpazilla(e.target.value)
+              setPage(1)
+            }}
+            disabled={!presentDistrict}
+          >
+            <option value="">{presentDistrict ? 'All' : 'Select district first'}</option>
+            {presentUpazilaOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Permanent Division */}
+        <div className="space-y-1">
+          <label className="text-sm font-medium">Permanent Division</label>
+          <select
+            className="w-full rounded-md border px-3 py-2 bg-white"
+            value={permanentDivision}
+            onChange={(e) => {
+              setPermanentDivision(e.target.value)
+              setPage(1)
+            }}
+          >
+            <option value="">All</option>
+            {divisionOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Permanent District */}
+        <div className="space-y-1">
+          <label className="text-sm font-medium">Permanent District</label>
+          <select
+            className="w-full rounded-md border px-3 py-2 bg-white"
+            value={permanentDistrict}
+            onChange={(e) => {
+              setPermanentDistrict(e.target.value)
+              setPage(1)
+            }}
+            disabled={!permanentDivision}
+          >
+            <option value="">{permanentDivision ? 'All' : 'Select division first'}</option>
+            {permanentDistrictOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Permanent Upazilla */}
+        <div className="space-y-1">
+          <label className="text-sm font-medium">Permanent Upazilla</label>
+          <select
+            className="w-full rounded-md border px-3 py-2 bg-white"
+            value={permanentUpazilla}
+            onChange={(e) => {
+              setPermanentUpazilla(e.target.value)
+              setPage(1)
+            }}
+            disabled={!permanentDistrict}
+          >
+            <option value="">{permanentDistrict ? 'All' : 'Select district first'}</option>
+            {permanentUpazilaOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Created From */}
+        <div className="space-y-1">
+          <label className="text-sm font-medium">Created From</label>
+          <input
+            type="date"
+            className="w-full rounded-md border px-3 py-2"
+            value={startDate}
+            onChange={(e) => {
+              setStartDate(e.target.value)
+              setPage(1)
+            }}
+          />
+        </div>
+
+        {/* Created To */}
+        <div className="space-y-1">
+          <label className="text-sm font-medium">Created To</label>
+          <input
+            type="date"
+            className="w-full rounded-md border px-3 py-2"
+            value={endDate}
+            onChange={(e) => {
+              setEndDate(e.target.value)
+              setPage(1)
+            }}
+          />
+        </div>
+
+        {/* ✅ Last Donation From */}
+        <div className="space-y-1">
+          <label className="text-sm font-medium">Last Donation From</label>
+          <input
+            type="date"
+            className="w-full rounded-md border px-3 py-2"
+            value={lastDonationStart}
+            onChange={(e) => {
+              setLastDonationStart(e.target.value)
+              setPage(1)
+            }}
+          />
+        </div>
+
+        {/* ✅ Last Donation To */}
+        <div className="space-y-1">
+          <label className="text-sm font-medium">Last Donation To</label>
+          <input
+            type="date"
+            className="w-full rounded-md border px-3 py-2"
+            value={lastDonationEnd}
+            onChange={(e) => {
+              setLastDonationEnd(e.target.value)
+              setPage(1)
+            }}
+          />
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-end gap-2">
+          <Button variant="outline" onClick={clearFilters}>
+            Clear Filters
           </Button>
         </div>
       </div>
@@ -183,11 +528,7 @@ export default function DonorsPage() {
         columns={columns as any}
         actions={(d) => (
           <div className="flex justify-end gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => console.log('view', d?._id)}
-            >
+            <Button variant="ghost" size="icon" onClick={() => console.log('view', d?._id)}>
               <Eye className="h-4 w-4" />
             </Button>
             <Button
