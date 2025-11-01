@@ -1,6 +1,6 @@
 "use client";
 
-import { JSX, useState } from "react";
+import React, { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -22,7 +22,7 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
-const SignInClient = (): JSX.Element => {
+const SignInClient = () => {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 

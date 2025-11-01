@@ -114,7 +114,7 @@ function ConfirmHost() {
     return () => {
       __confirmEnqueue = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   useEffect(() => {

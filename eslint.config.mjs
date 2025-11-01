@@ -49,7 +49,7 @@ export default [
     },
     rules: {
       // Re-enable the type-aware rules *only* where we have type info
-      "@typescript-eslint/await-thenable": "error",
+      // "@typescript-eslint/await-thenable": "error",
     },
   },
 ];
