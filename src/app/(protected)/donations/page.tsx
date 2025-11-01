@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils'
 
 // Import your shared enum (adjust the path if needed)
 import { DonationRequestStatusEnum } from '@/app/enums/index.enum'
+import { API_ENDPOINT } from '@/app/constants/apiEndpoints'
 
 // ---- Local types for table rows ----
 type UserLite = {
@@ -76,11 +77,11 @@ export default function DonationsPage() {
 
   // ---- LIST via useCrud (server pagination) ----
   const { paginatedList } = useCrud<DonationRequest>({
-    url: '/donations/all-donations', // must return { data: PaginatedResponse<DonationRequest> }
+    url: `${API_ENDPOINT.donations}/all-donations`,
     queryKey: ['donations', 'admin', status, search],
     pagination: { currentPage: page, pageSize: limit },
     queryParams: {
-      status: status || undefined,                // send only when selected
+      status: status || undefined,
       search: search?.trim() || undefined,
     },
     listEnabled: false,
@@ -114,7 +115,9 @@ export default function DonationsPage() {
         render: (d: DonationRequest) => (
           <div className="flex flex-col">
             <span className="font-medium">{d?.requester?.name ?? '—'}</span>
-            <span className="text-xs text-muted-foreground">{d?.requester?.phone ?? ''}</span>
+            <span className="text-xs text-muted-foreground">
+              {d?.requester?.phone ?? ''}
+            </span>
           </div>
         ),
       },
@@ -131,7 +134,9 @@ export default function DonationsPage() {
       {
         key: 'bloodGroup',
         label: 'Blood',
-        render: (d: DonationRequest) => <Badge variant="secondary">{d?.bloodGroup}</Badge>,
+        render: (d: DonationRequest) => (
+          <Badge variant="secondary">{d?.bloodGroup}</Badge>
+        ),
       },
       {
         key: 'preferredDonationDate',
@@ -267,10 +272,18 @@ export default function DonationsPage() {
               <SelectContent>
                 <SelectItem value="ALL">All Status</SelectItem>
                 <SelectItem value={DonationRequestStatusEnum.PENDING}>Pending</SelectItem>
-                <SelectItem value={DonationRequestStatusEnum.ACCEPTED}>Accepted</SelectItem>
-                <SelectItem value={DonationRequestStatusEnum.DECLINED}>Declined</SelectItem>
-                <SelectItem value={DonationRequestStatusEnum.CANCELED}>Canceled</SelectItem>
-                <SelectItem value={DonationRequestStatusEnum.COMPLETED}>Completed</SelectItem>
+                <SelectItem value={DonationRequestStatusEnum.ACCEPTED}>
+                  Accepted
+                </SelectItem>
+                <SelectItem value={DonationRequestStatusEnum.DECLINED}>
+                  Declined
+                </SelectItem>
+                <SelectItem value={DonationRequestStatusEnum.CANCELED}>
+                  Canceled
+                </SelectItem>
+                <SelectItem value={DonationRequestStatusEnum.COMPLETED}>
+                  Completed
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
