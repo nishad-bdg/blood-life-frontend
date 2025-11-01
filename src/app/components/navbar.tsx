@@ -25,9 +25,9 @@ export function Navbar() {
   const [isOpen, setIsOpen] = useState(false)
 
   const navItems = [
-    { label: "Dashboard", href: "#" },
+    { label: "Dashboard", href: "/dashboard" },
     { label: "Donors", href: "/donors" },
-    { label: "Donations", href: "#" },
+    { label: "Donations", href: "/donations" },
   ]
 
   const handleLogout = async () => {

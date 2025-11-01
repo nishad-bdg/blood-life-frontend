@@ -23,3 +23,11 @@ export enum BloodGroupEnum {
   AB_NEG = 'AB-',
 }
 
+
+export enum DonationRequestStatusEnum {
+  PENDING = 'PENDING',
+  ACCEPTED = 'ACCEPTED',
+  DECLINED = 'DECLINED',
+  CANCELED = 'CANCELED',
+  COMPLETED = 'COMPLETED',
+}
