@@ -72,10 +72,10 @@ export const authOptions: NextAuthOptions = {
           if (!res.ok) return null;
 
           const data: LoginResponse = await res.json();
-          const accessToken = data.accessToken;
-          const sub = data.payload?.sub;
-          const phone = data.payload?.phone;
-          const rolesRaw = data.payload?.roles ?? [];
+          const accessToken = data?.accessToken;
+          const sub = data?.payload?.sub;
+          const phone = data?.payload?.phone;
+          const rolesRaw = data?.payload?.roles ?? [];
 
           if (!accessToken || !sub || !phone) return null;
 
