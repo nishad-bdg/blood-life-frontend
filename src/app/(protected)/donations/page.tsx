@@ -214,7 +214,7 @@ export default function BloodRequestsPage() {
   const loading = paginatedList.isLoading || paginatedList.isFetching;
   const errorMsg =
     (paginatedList.error as Error)?.message ||
-    (typeof paginatedList.data === 'string' ? paginatedList?.data : '') ||
+    (typeof ((paginatedList as any)?.data) === 'string' ? (paginatedList as any).data : '') ||
     '';
 
   const columns: Column<BloodRequest>[] = useMemo(
