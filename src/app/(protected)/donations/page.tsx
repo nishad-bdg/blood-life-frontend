@@ -1,326 +1,402 @@
-'use client'
+/* eslint-disable */
+'use client';
 
-import React, { useMemo, useState } from 'react'
-import { useSession } from 'next-auth/react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2 } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { GenericTable } from '@/app/components/shared/GenericTable'
-import { useCrud, type PaginatedResponse } from '@/app/hooks/useCRUD'
-import api from '@/lib/axios'
-import { cn } from '@/lib/utils'
-
-// Import your shared enum (adjust the path if needed)
-import { DonationRequestStatusEnum } from '@/app/enums/index.enum'
-import { API_ENDPOINT } from '@/app/constants/apiEndpoints'
-
-// ---- Local types for table rows ----
-type UserLite = {
-  _id: string
-  name: string
-  phone: string
-  bloodGroup?: string
+import { API_ENDPOINT } from '@/app/constants/apiEndpoints';
+import { useCrud } from '@/app/hooks/useCRUD';
+import React, { useMemo, useState } from 'react';
+``
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
 }
 
-type DonationRequest = {
-  _id: string
-  requester: UserLite
-  donor: UserLite
-  bloodGroup: string
-  preferredDonationDate?: string | null
-  notes?: string | null
-  status: DonationRequestStatusEnum
-  actionBy?: UserLite | null
-  createdAt?: string
-  updatedAt?: string
+export type BloodStatus =
+  | 'PENDING'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'COMPLETED'
+  | string;
+
+export interface BloodUser {
+  _id: string;
+  phone?: string;
+  name?: string;
+  bloodGroup?: string;
 }
 
-// ---- Helpers ----
-const fmtDate = (d?: string | null) => (d ? new Date(d).toLocaleDateString() : '—')
+export interface BloodRequest {
+  _id: string;
+  isDeleted?: boolean;
+  requester?: BloodUser;
+  donor?: BloodUser;
+  bloodGroup?: string;
+  status?: BloodStatus;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
-const statusVariant = (
-  s: DonationRequestStatusEnum,
-): 'default' | 'secondary' | 'destructive' | 'outline' => {
-  switch (s) {
-    case DonationRequestStatusEnum.PENDING:
-      return 'secondary'
-    case DonationRequestStatusEnum.ACCEPTED:
-      return 'default'
-    case DonationRequestStatusEnum.DECLINED:
-      return 'destructive'
-    case DonationRequestStatusEnum.CANCELED:
-    case DonationRequestStatusEnum.COMPLETED:
-    default:
-      return 'outline'
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === 'object';
+}
+
+function isBloodUser(x: unknown): x is BloodUser {
+  return isRecord(x) && typeof x._id === 'string';
+}
+
+function isBloodRequest(x: unknown): x is BloodRequest {
+  return (
+    isRecord(x) &&
+    typeof x._id === 'string' &&
+    (x.requester === undefined || isBloodUser(x.requester)) &&
+    (x.donor === undefined || isBloodUser(x.donor))
+  );
+}
+
+type Envelope<T> = {
+  status?: string;
+  statusCode?: number;
+  message?: string;
+  data?: unknown; // could be T[] or { data: T[], total, page, limit, totalPages }
+};
+
+function normalizeResponse<T>(raw: unknown): PaginatedResponse<T> {
+  const empty: PaginatedResponse<T> = {
+    items: [],
+    total: 0,
+    page: 1,
+    limit: 10,
+    totalPages: 0,
+  };
+
+  if (!isRecord(raw)) return empty;
+
+  const maybeEnvelope = raw as Envelope<T[] | PaginatedResponse<T>>;
+  const inner = 'data' in maybeEnvelope ? maybeEnvelope.data : raw;
+  if (!inner) return empty;
+
+  // Case A: { data: T[] }
+  if (Array.isArray(inner)) {
+    return {
+      items: inner as T[],
+      total: inner.length,
+      page: 1,
+      limit: (inner as T[]).length || 10,
+      totalPages: 1,
+    };
   }
+
+  // Case B: { data: T[], total, page, limit, totalPages }
+  if (isRecord(inner)) {
+    const items = Array.isArray(inner.data) ? (inner.data as T[]) : [];
+    const total = Number(inner.total ?? items.length ?? 0) || 0;
+    const page = Number(inner.page ?? 1) || 1;
+    const limit = Number(inner.limit ?? (items.length || 10)) || 10;
+    const totalPages =
+      Number(inner.totalPages ?? (limit ? Math.ceil(total / limit) : 1)) || 1;
+
+    return { items, total, page, limit, totalPages };
+  }
+
+  return empty;
 }
 
-export default function DonationsPage() {
-  const { data: session, status: authStatus } = useSession()
-  const token = (session as any)?.accessToken ?? null
+const dash = '—';
+function safeText(v: unknown, fallback = dash): string {
+  return typeof v === 'string' && v.trim() ? v : fallback;
+}
+function safeDate(iso?: string, fallback = dash): string {
+  if (!iso) return fallback;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? fallback : d.toLocaleString();
+}
 
-  // filters + pagination
-  const [status, setStatus] = useState<DonationRequestStatusEnum | ''>('') // internal '' = All
-  const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
-  const [limit, setLimit] = useState(10)
+// ===============
+// Table building
+// ===============
 
-  // ---- LIST via useCrud (server pagination) ----
-  const { paginatedList } = useCrud<DonationRequest>({
-    url: `${API_ENDPOINT.donations}/all-donations`,
-    queryKey: ['donations', 'admin', status, search],
+type Column<T> = {
+  key: keyof T | string;
+  label: string;
+  render?: (row: T) => React.ReactNode;
+  className?: string;
+};
+
+function TableShell<T>({
+  rows,
+  columns,
+  emptyMessage = 'No data found',
+}: {
+  rows?: T[];
+  columns: Column<T>[];
+  emptyMessage?: string;
+}) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+
+  if (!safeRows.length) {
+    return (
+      <div className="text-sm text-muted-foreground py-6">{emptyMessage}</div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto border rounded-md">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-muted/50">
+            {columns.map((c) => (
+              <th
+                key={String(c.key)}
+                className={`text-left p-3 whitespace-nowrap ${c.className ?? ''}`}
+              >
+                {c.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {safeRows.map((row, i) => (
+            <tr
+              key={(isRecord(row) && (row as any)._id) ?? i}
+              className="border-t"
+            >
+              {columns.map((c) => (
+                <td
+                  key={String(c.key)}
+                  className={`p-3 align-top whitespace-nowrap ${c.className ?? ''}`}
+                >
+                  {c.render
+                    ? c.render(row)
+                    : safeText((row as any)?.[c.key as any])}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// =========================
+// Page / Container Component
+// =========================
+
+const API_URL = `${API_ENDPOINT.donations}/all-donations`
+
+export default function BloodRequestsPage() {
+  // local pagination state
+  const [page, setPage] = useState<number>(1);
+  const [limit, setLimit] = useState<number>(10);
+
+  const { paginatedList, remove, onExportAll } = useCrud<BloodRequest>({
+    url: API_URL,
+    queryKey: ['blood-requests'],
     pagination: { currentPage: page, pageSize: limit },
-    queryParams: {
-      status: status || undefined,
-      search: search?.trim() || undefined,
-    },
+    paginatedListEnabled: true,
     listEnabled: false,
-    paginatedListEnabled: !!token && authStatus !== 'loading',
-  })
+    detailEnabled: false,
+    refetchOnWindowFocus: true,
+  });
 
-  const isLoading = paginatedList?.isLoading
-  const error = paginatedList?.error as Error | null
-  const data = paginatedList?.data as PaginatedResponse<DonationRequest> | undefined
+  const normalized = useMemo(
+    () => normalizeResponse<BloodRequest>(paginatedList?.data),
+    [paginatedList?.data],
+  );
 
-  // ---- STATUS UPDATE (custom route /:id/status) ----
-  const qc = useQueryClient()
-  const updateStatus = useMutation({
-    mutationFn: async ({ id, next }: { id: string; next: DonationRequestStatusEnum }) => {
-      const { data } = await api.patch(`/donations/${id}/status`, { status: next })
-      return data
-    },
-    onSuccess: () => {
-      // refresh any queries that list donations
-      qc.invalidateQueries({ queryKey: ['/donations/admin/all'], exact: false })
-      qc.invalidateQueries({ queryKey: ['donations', 'admin'], exact: false })
-    },
-  })
+  const rows = useMemo(
+    () => (normalized?.items || []).filter(isBloodRequest),
+    [normalized?.items],
+  );
 
-  // ---- Table columns ----
-  const columns = useMemo(
+  const loading = paginatedList.isLoading || paginatedList.isFetching;
+  const errorMsg =
+    (paginatedList.error as Error)?.message ||
+    (typeof paginatedList.data === 'string' ? paginatedList?.data : '') ||
+    '';
+
+  const columns: Column<BloodRequest>[] = useMemo(
     () => [
+      {
+        key: '_id',
+        label: 'ID',
+        render: (r) => safeText(r?._id?.slice?.(-6) ?? ''),
+      },
       {
         key: 'requester',
         label: 'Requester',
-        render: (d: DonationRequest) => (
-          <div className="flex flex-col">
-            <span className="font-medium">{d?.requester?.name ?? '—'}</span>
-            <span className="text-xs text-muted-foreground">
-              {d?.requester?.phone ?? ''}
-            </span>
+        render: (r) => (
+          <div className="min-w-[200px]">
+            <div className="font-medium">
+              {safeText(r?.requester?.name)}
+            </div>
+            <div className="text-muted-foreground text-xs">
+              {safeText(r?.requester?.phone)}
+              {' • '}
+              {safeText(r?.requester?.bloodGroup)}
+            </div>
           </div>
         ),
       },
       {
         key: 'donor',
         label: 'Donor',
-        render: (d: DonationRequest) => (
-          <div className="flex flex-col">
-            <span className="font-medium">{d?.donor?.name ?? '—'}</span>
-            <span className="text-xs text-muted-foreground">{d?.donor?.phone ?? ''}</span>
+        render: (r) => (
+          <div className="min-w-[200px]">
+            <div className="font-medium">{safeText(r?.donor?.name)}</div>
+            <div className="text-muted-foreground text-xs">
+              {safeText(r?.donor?.phone)}
+              {' • '}
+              {safeText(r?.donor?.bloodGroup)}
+            </div>
           </div>
         ),
       },
       {
         key: 'bloodGroup',
-        label: 'Blood',
-        render: (d: DonationRequest) => (
-          <Badge variant="secondary">{d?.bloodGroup}</Badge>
-        ),
-      },
-      {
-        key: 'preferredDonationDate',
-        label: 'Preferred Date',
-        render: (d: DonationRequest) => fmtDate(d?.preferredDonationDate),
-      },
-      {
-        key: 'notes',
-        label: 'Notes',
-        render: (d: DonationRequest) =>
-          d?.notes ? (
-            <span title={d?.notes} className="line-clamp-2 max-w-[280px]">
-              {d?.notes}
-            </span>
-          ) : (
-            '—'
-          ),
+        label: 'Req. Group',
+        render: (r) => safeText(r?.bloodGroup),
       },
       {
         key: 'status',
         label: 'Status',
-        render: (d: DonationRequest) => (
-          <Badge className="uppercase" variant={statusVariant(d?.status)}>
-            {d?.status}
-          </Badge>
+        render: (r) => (
+          <span className="inline-flex px-2 py-0.5 rounded-md border text-xs">
+            {safeText(r?.status)}
+          </span>
         ),
       },
       {
         key: 'createdAt',
         label: 'Created',
-        render: (d: DonationRequest) => fmtDate(d?.createdAt),
+        render: (r) => safeDate(r?.createdAt),
+      },
+      {
+        key: 'actions',
+        label: 'Actions',
+        render: (r) => (
+          <div className="flex items-center gap-2">
+            <button
+              className="px-2 py-1 text-xs border rounded-md hover:bg-muted"
+              onClick={() => {
+                // put your "view" / "detail" action here
+                // e.g., router.push(`/blood-requests/${r._id}`)
+                console.info('view', r?._id);
+              }}
+            >
+              View
+            </button>
+            <button
+              className="px-2 py-1 text-xs border rounded-md hover:bg-destructive/10"
+              onClick={async () => {
+                const id = r?._id;
+                if (!id) return;
+                try {
+                  await remove.mutateAsync(id);
+                } catch (e) {
+                  // silent on cancel; otherwise show something
+                  const msg =
+                    (e as Error)?.message &&
+                    (e as Error).message !== '__DELETE_CANCELLED__'
+                      ? (e as Error).message
+                      : '';
+                  if (msg) console.error('Delete failed:', msg);
+                }
+              }}
+            >
+              Delete
+            </button>
+          </div>
+        ),
       },
     ],
-    [],
-  )
-
-  // ---- Row actions ----
-  const actions = (d: DonationRequest) => {
-    const isPending = d?.status === DonationRequestStatusEnum.PENDING
-    const isAccepted = d?.status === DonationRequestStatusEnum.ACCEPTED
-    const isTerminal =
-      d?.status === DonationRequestStatusEnum.CANCELED ||
-      d?.status === DonationRequestStatusEnum.COMPLETED
-
-    return (
-      <div className="flex justify-end gap-1">
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={updateStatus.isPending || !isPending}
-          onClick={() =>
-            updateStatus.mutate({ id: d?._id, next: DonationRequestStatusEnum.ACCEPTED })
-          }
-        >
-          Accept
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          className={cn('text-destructive')}
-          disabled={updateStatus.isPending || !isPending}
-          onClick={() =>
-            updateStatus.mutate({ id: d?._id, next: DonationRequestStatusEnum.DECLINED })
-          }
-        >
-          Decline
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={updateStatus.isPending || isTerminal}
-          onClick={() =>
-            updateStatus.mutate({ id: d?._id, next: DonationRequestStatusEnum.CANCELED })
-          }
-        >
-          Cancel
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={updateStatus.isPending || !isAccepted}
-          onClick={() =>
-            updateStatus.mutate({ id: d?._id, next: DonationRequestStatusEnum.COMPLETED })
-          }
-        >
-          Mark Completed
-        </Button>
-      </div>
-    )
-  }
-
-  if (!token) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="text-center space-y-2">
-          <p className="text-lg font-medium">You’re signed out</p>
-          <p className="text-sm text-muted-foreground">
-            Please sign in to view donation requests.
-          </p>
-        </div>
-      </div>
-    )
-  }
+    [remove],
+  );
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Donations</CardTitle>
-          <div className="flex items-center gap-2">
-            {/* Search */}
-            <Input
-              placeholder="Search name / phone…"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value)
-                setPage(1)
-              }}
-              className="w-64"
-            />
+      {/* Header / Actions */}
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-xl font-semibold">Blood Requests</h2>
 
-            {/* Status filter (Radix requires non-empty item values) */}
-            <Select
-              value={status || 'ALL'}
-              onValueChange={(v) => {
-                setStatus(v === 'ALL' ? '' : (v as DonationRequestStatusEnum))
-                setPage(1)
-              }}
-            >
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="All Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All Status</SelectItem>
-                <SelectItem value={DonationRequestStatusEnum.PENDING}>Pending</SelectItem>
-                <SelectItem value={DonationRequestStatusEnum.ACCEPTED}>
-                  Accepted
-                </SelectItem>
-                <SelectItem value={DonationRequestStatusEnum.DECLINED}>
-                  Declined
-                </SelectItem>
-                <SelectItem value={DonationRequestStatusEnum.CANCELED}>
-                  Canceled
-                </SelectItem>
-                <SelectItem value={DonationRequestStatusEnum.COMPLETED}>
-                  Completed
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardHeader>
+        <div className="flex items-center gap-2">
+          <select
+            className="border rounded-md px-2 py-1 text-sm"
+            value={limit}
+            onChange={(e) => {
+              const next = Number(e.target.value) || 10;
+              setLimit(next);
+              setPage(1);
+            }}
+          >
+            {[10, 20, 50, 100].map((n) => (
+              <option key={n} value={n}>
+                {n} / page
+              </option>
+            ))}
+          </select>
 
-        <CardContent>
-          {isLoading ? (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading donations…
-            </div>
-          ) : error ? (
-            <div className="text-sm text-red-500">Error: {error?.message}</div>
-          ) : (
-            <GenericTable<DonationRequest>
-              title="Donation Requests"
-              description={
-                data ? `Showing ${data?.items?.length} of ${data?.total}` : undefined
-              }
-              data={data?.items ?? []}
-              columns={columns as any}
-              actions={actions}
-              searchable={false}
-              pagination="server"
-              total={data?.total ?? 0}
-              page={page}
-              pageSize={limit}
-              onPageChange={setPage}
-              onPageSizeChange={(n) => {
-                setLimit(n)
-                setPage(1)
-              }}
-              pageSizeOptions={[10, 20, 50]}
-            />
-          )}
-        </CardContent>
-      </Card>
+          <button
+            className="px-3 py-1.5 text-sm border rounded-md hover:bg-muted"
+            onClick={() => onExportAll({}, 'blood-requests')}
+            disabled={loading}
+            title="Export current dataset to Excel"
+          >
+            Export
+          </button>
+        </div>
+      </div>
+
+      {/* Error / Loading */}
+      {errorMsg ? (
+        <div className="text-sm text-red-600 border border-red-200 bg-red-50 p-3 rounded">
+          {errorMsg}
+        </div>
+      ) : null}
+
+      {loading ? (
+        <div className="text-sm text-muted-foreground">Loading…</div>
+      ) : null}
+
+      {/* Table */}
+      <TableShell<BloodRequest>
+        rows={rows}
+        columns={columns}
+        emptyMessage="No blood requests"
+      />
+
+      {/* Pagination */}
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-muted-foreground">
+          Total: {normalized.total} • Page {normalized.page} /{' '}
+          {normalized.totalPages || 1}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            className="px-3 py-1.5 text-sm border rounded-md disabled:opacity-50"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={loading || normalized.page <= 1}
+          >
+            Prev
+          </button>
+          <button
+            className="px-3 py-1.5 text-sm border rounded-md disabled:opacity-50"
+            onClick={() =>
+              setPage((p) =>
+                normalized.totalPages ? Math.min(normalized.totalPages, p + 1) : p + 1,
+              )
+            }
+            disabled={
+              loading ||
+              (normalized.totalPages ? normalized.page >= normalized.totalPages : false)
+            }
+          >
+            Next
+          </button>
+        </div>
+      </div>
     </div>
-  )
+  );
 }
