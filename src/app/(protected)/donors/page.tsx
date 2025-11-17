@@ -670,7 +670,7 @@ export default function DonorsPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => handleToggleStatus(d)}
-                disabled={update.isLoading}
+                disabled={update.isPending}
               >
                 {d.status === UserStatusEnum.BLOCKED ? 'Unblock' : 'Block'}
               </Button>
