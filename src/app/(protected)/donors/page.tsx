@@ -319,6 +319,29 @@ export default function DonorsPage() {
     await update.mutateAsync({ id, payload: toCreatePayload(payload) })
   }
 
+  const handleToggleStatus = async (donor: Donor) => {
+    if (!donor?._id) return
+
+    const current = donor.status
+    let next: UserStatusEnum | undefined
+
+    // Only toggle between Active and Blocked, leave Deleted as is
+    if (current === UserStatusEnum.BLOCKED) {
+      next = UserStatusEnum.ACTIVE
+    } else if (current === UserStatusEnum.ACTIVE || !current) {
+      next = UserStatusEnum.BLOCKED
+    } else {
+      // DELETED or unknown → do nothing
+      return
+    }
+
+    await update.mutateAsync({
+      id: donor._id,
+      // partial payload just for status; cast to any to avoid affecting other flows
+      payload: { status: next } as any,
+    })
+  }
+
   return (
     <div className="space-y-4">
       {/* Header actions */}
@@ -640,6 +663,19 @@ export default function DonorsPage() {
             >
               <Pencil className="h-4 w-4" />
             </Button>
+
+            {/* Block / Unblock (skip for Deleted) */}
+            {d.status !== UserStatusEnum.DELETED && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleToggleStatus(d)}
+                disabled={update.isLoading}
+              >
+                {d.status === UserStatusEnum.BLOCKED ? 'Unblock' : 'Block'}
+              </Button>
+            )}
+
             <Button
               variant="ghost"
               size="icon"
