@@ -168,6 +168,16 @@ export default function DonorsPage() {
     [],
   )
 
+  // Role options for admin assignment dropdown
+  const roleOptions = useMemo(
+    () =>
+      (Object.values(RoleEnum) as string[]).map((r) => ({
+        label: r.replace('-', ' '), // "co-admin" -> "co admin"
+        value: r,
+      })),
+    [],
+  )
+
   const clearFilters = () => {
     setBloodGroup('')
     setStatusFilter('')
@@ -339,6 +349,16 @@ export default function DonorsPage() {
       id: donor._id,
       // partial payload just for status; cast to any to avoid affecting other flows
       payload: { status: next } as any,
+    })
+  }
+
+  const handleChangeRole = async (donor: Donor, role: RoleEnum) => {
+    if (!donor?._id) return
+
+    // Simple approach: set a single primary role
+    await update.mutateAsync({
+      id: donor._id,
+      payload: { roles: [role] } as any,
     })
   }
 
@@ -644,49 +664,71 @@ export default function DonorsPage() {
         }
         data={data?.items ?? []}
         columns={columns as any}
-        actions={(d) => (
-          <div className="flex justify-end gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => console.log('view', d?._id)}
-            >
-              <Eye className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                setEditRow(d)
-                setModalOpen(true)
-              }}
-            >
-              <Pencil className="h-4 w-4" />
-            </Button>
+        actions={(d) => {
+          const currentRole =
+            (d.roles && d.roles[0]) || (RoleEnum.USER as RoleEnum)
 
-            {/* Block / Unblock (skip for Deleted) */}
-            {d.status !== UserStatusEnum.DELETED && (
+          return (
+            <div className="flex items-center justify-end gap-1">
               <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleToggleStatus(d)}
+                variant="ghost"
+                size="icon"
+                onClick={() => console.log('view', d?._id)}
+              >
+                <Eye className="h-4 w-4" />
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  setEditRow(d)
+                  setModalOpen(true)
+                }}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+
+              {/* Role assign dropdown */}
+              <select
+                className="h-8 rounded-md border px-2 text-xs"
+                value={currentRole}
+                onChange={(e) =>
+                  handleChangeRole(d, e.target.value as RoleEnum)
+                }
                 disabled={update.isPending}
               >
-                {d.status === UserStatusEnum.BLOCKED ? 'Unblock' : 'Block'}
-              </Button>
-            )}
+                {roleOptions.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
 
-            <Button
-              variant="ghost"
-              size="icon"
-              className="text-destructive hover:text-destructive"
-              onClick={() => remove.mutate(d?._id)}
-              disabled={paginatedList?.isLoading}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        )}
+              {/* Block / Unblock (skip for Deleted) */}
+              {d.status !== UserStatusEnum.DELETED && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleToggleStatus(d)}
+                  disabled={update.isPending}
+                >
+                  {d.status === UserStatusEnum.BLOCKED ? 'Unblock' : 'Block'}
+                </Button>
+              )}
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-destructive hover:text-destructive"
+                onClick={() => remove.mutate(d?._id)}
+                disabled={paginatedList?.isLoading}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          )
+        }}
         emptyMessage="No donors found"
         searchable
         onSearch={(q) => {
