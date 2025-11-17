@@ -10,7 +10,11 @@ import { Badge } from '@/components/ui/badge'
 import { Loader2, Eye, Pencil, Trash2, Download, Plus } from 'lucide-react'
 import { GenericTable } from '@/app/components/shared/GenericTable'
 import DonorModal, { DonorFormDTO } from './components/DonorModal'
-import { RoleEnum, BloodGroupEnum } from '@/app/enums/index.enum'
+import {
+  RoleEnum,
+  BloodGroupEnum,
+  UserStatusEnum,
+} from '@/app/enums/index.enum'
 
 // Geo helpers
 import { getDivisions, getDistricts, getUpazilas } from '@/app/data/bd-geo'
@@ -26,6 +30,7 @@ type Donor = {
   presentUpazilla?: string
   lastDonationDate?: string | null
   roles?: RoleEnum[]
+  status?: UserStatusEnum
 }
 
 type CreateDonorPayload = Omit<DonorFormDTO, '_id'>
@@ -46,8 +51,23 @@ const roleVariant = (
   }
 }
 
+const statusVariant = (
+  status?: UserStatusEnum,
+): 'default' | 'secondary' | 'destructive' | 'outline' => {
+  switch (status) {
+    case UserStatusEnum.ACTIVE: // "Active"
+      return 'default'
+    case UserStatusEnum.BLOCKED: // "Blocked"
+      return 'secondary'
+    case UserStatusEnum.DELETED: // "Deleted"
+      return 'destructive'
+    default:
+      return 'outline'
+  }
+}
+
 export default function DonorsPage() {
-  const { data: session, status } = useSession()
+  const { data: session, status: sessionStatus } = useSession()
   const token = (session as any)?.accessToken ?? null
 
   // table state
@@ -57,6 +77,7 @@ export default function DonorsPage() {
 
   // ------- FILTER STATE (matches DonorFilterDto) -------
   const [bloodGroup, setBloodGroup] = useState<BloodGroupEnum | ''>('')
+  const [statusFilter, setStatusFilter] = useState<UserStatusEnum | ''>('')
 
   // Present
   const [presentDivision, setPresentDivision] = useState('')
@@ -70,11 +91,11 @@ export default function DonorsPage() {
 
   // Created-at range
   const [startDate, setStartDate] = useState<string>('') // yyyy-mm-dd
-  const [endDate, setEndDate] = useState<string>('')     // yyyy-mm-dd
+  const [endDate, setEndDate] = useState<string>('') // yyyy-mm-dd
 
-  // ✅ Last donation date range
+  // Last donation date range
   const [lastDonationStart, setLastDonationStart] = useState<string>('') // yyyy-mm-dd
-  const [lastDonationEnd, setLastDonationEnd] = useState<string>('')     // yyyy-mm-dd
+  const [lastDonationEnd, setLastDonationEnd] = useState<string>('') // yyyy-mm-dd
 
   // reset child selects when parent changes (Present)
   useEffect(() => {
@@ -98,32 +119,58 @@ export default function DonorsPage() {
 
   const divisionOptions = useMemo(
     () => getDivisions().map((d) => ({ label: d, value: d })),
-    []
+    [],
   )
+
   const presentDistrictOptions = useMemo(
     () => getDistricts(presentDivision).map((d) => ({ label: d, value: d })),
-    [presentDivision]
+    [presentDivision],
   )
+
   const presentUpazilaOptions = useMemo(
-    () => getUpazilas(presentDivision, presentDistrict).map((u) => ({ label: u, value: u })),
-    [presentDivision, presentDistrict]
+    () =>
+      getUpazilas(presentDivision, presentDistrict).map((u) => ({
+        label: u,
+        value: u,
+      })),
+    [presentDivision, presentDistrict],
   )
+
   const permanentDistrictOptions = useMemo(
     () => getDistricts(permanentDivision).map((d) => ({ label: d, value: d })),
-    [permanentDivision]
+    [permanentDivision],
   )
+
   const permanentUpazilaOptions = useMemo(
-    () => getUpazilas(permanentDivision, permanentDistrict).map((u) => ({ label: u, value: u })),
-    [permanentDivision, permanentDistrict]
+    () =>
+      getUpazilas(permanentDivision, permanentDistrict).map((u) => ({
+        label: u,
+        value: u,
+      })),
+    [permanentDivision, permanentDistrict],
   )
 
   const bloodOptions = useMemo(
-    () => (Object.values(BloodGroupEnum) as string[]).map((bg) => ({ label: bg, value: bg })),
-    []
+    () =>
+      (Object.values(BloodGroupEnum) as string[]).map((bg) => ({
+        label: bg,
+        value: bg,
+      })),
+    [],
+  )
+
+  const statusOptions = useMemo(
+    () =>
+      (Object.values(UserStatusEnum) as string[]).map((st) => ({
+        label: st, // "Active", "Blocked", "Deleted"
+        value: st,
+      })),
+    [],
   )
 
   const clearFilters = () => {
     setBloodGroup('')
+    setStatusFilter('')
     setPresentDivision('')
     setPresentDistrict('')
     setPresentUpazilla('')
@@ -146,13 +193,13 @@ export default function DonorsPage() {
     CreateDonorPayload
   >({
     url: apiEndpoints.donors,
-    // include filters in the key so queries refetch when they change
     queryKey: [
       DONORS_QUERY_KEY,
       search,
       page,
       limit,
       bloodGroup,
+      statusFilter,
       presentDivision,
       presentDistrict,
       presentUpazilla,
@@ -161,13 +208,14 @@ export default function DonorsPage() {
       permanentUpazilla,
       startDate,
       endDate,
-      lastDonationStart, // ✅
-      lastDonationEnd,   // ✅
+      lastDonationStart,
+      lastDonationEnd,
     ],
     pagination: { currentPage: page, pageSize: limit },
     queryParams: {
       searchKeyword: search || undefined,
       bloodGroup: bloodGroup || undefined,
+      status: statusFilter || undefined,
       presentDivision: presentDivision || undefined,
       presentDistrict: presentDistrict || undefined,
       presentUpazilla: presentUpazilla || undefined,
@@ -176,14 +224,14 @@ export default function DonorsPage() {
       permanentUpazilla: permanentUpazilla || undefined,
       startDate: startDate || undefined,
       endDate: endDate || undefined,
-      lastDonationStart: lastDonationStart || undefined, // ✅
-      lastDonationEnd: lastDonationEnd || undefined,     // ✅
+      lastDonationStart: lastDonationStart || undefined,
+      lastDonationEnd: lastDonationEnd || undefined,
     },
     listEnabled: false,
     paginatedListEnabled: Boolean(token),
   })
 
-  const isLoading = paginatedList?.isLoading || status === 'loading'
+  const isLoading = paginatedList?.isLoading || sessionStatus === 'loading'
   const error = paginatedList?.error as Error | null
   const data = paginatedList?.data as PaginatedResponse<Donor> | undefined
 
@@ -195,7 +243,9 @@ export default function DonorsPage() {
         {
           key: 'bloodGroup',
           label: 'Blood',
-          render: (d: Donor) => <Badge variant="secondary">{d?.bloodGroup}</Badge>,
+          render: (d: Donor) => (
+            <Badge variant="secondary">{d?.bloodGroup}</Badge>
+          ),
         },
         { key: 'presentDivision', label: 'Division' },
         { key: 'presentDistrict', label: 'District' },
@@ -217,6 +267,16 @@ export default function DonorsPage() {
             ),
         },
         {
+          key: 'status',
+          label: 'Status',
+          render: (d: Donor) =>
+            d?.status ? (
+              <Badge variant={statusVariant(d.status)}>{d.status}</Badge>
+            ) : (
+              '—'
+            ),
+        },
+        {
           key: 'lastDonationDate',
           label: 'Last Donation',
           render: (d: Donor) =>
@@ -231,9 +291,11 @@ export default function DonorsPage() {
   if (!token) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="text-center space-y-2">
+        <div className="space-y-2 text-center">
           <p className="text-lg font-medium">You’re signed out</p>
-          <p className="text-sm text-muted-foreground">Please sign in to view donors.</p>
+          <p className="text-sm text-muted-foreground">
+            Please sign in to view donors.
+          </p>
         </div>
       </div>
     )
@@ -271,6 +333,7 @@ export default function DonorsPage() {
                 {
                   searchKeyword: search || undefined,
                   bloodGroup: bloodGroup || undefined,
+                  status: statusFilter || undefined,
                   presentDivision: presentDivision || undefined,
                   presentDistrict: presentDistrict || undefined,
                   presentUpazilla: presentUpazilla || undefined,
@@ -279,8 +342,8 @@ export default function DonorsPage() {
                   permanentUpazilla: permanentUpazilla || undefined,
                   startDate: startDate || undefined,
                   endDate: endDate || undefined,
-                  lastDonationStart: lastDonationStart || undefined, // ✅
-                  lastDonationEnd: lastDonationEnd || undefined,     // ✅
+                  lastDonationStart: lastDonationStart || undefined,
+                  lastDonationEnd: lastDonationEnd || undefined,
                 },
                 'donors',
               )
@@ -309,7 +372,7 @@ export default function DonorsPage() {
         <div className="space-y-1">
           <label className="text-sm font-medium">Blood Group</label>
           <select
-            className="w-full rounded-md border px-3 py-2 bg-white"
+            className="w-full rounded-md border bg-white px-3 py-2"
             value={bloodGroup}
             onChange={(e) => {
               setBloodGroup(e.target.value as BloodGroupEnum | '')
@@ -325,11 +388,31 @@ export default function DonorsPage() {
           </select>
         </div>
 
+        {/* Status */}
+        <div className="space-y-1">
+          <label className="text-sm font-medium">Status</label>
+          <select
+            className="w-full rounded-md border bg-white px-3 py-2"
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value as UserStatusEnum | '')
+              setPage(1)
+            }}
+          >
+            <option value="">All</option>
+            {statusOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
         {/* Present Division */}
         <div className="space-y-1">
           <label className="text-sm font-medium">Present Division</label>
           <select
-            className="w-full rounded-md border px-3 py-2 bg-white"
+            className="w-full rounded-md border bg-white px-3 py-2"
             value={presentDivision}
             onChange={(e) => {
               setPresentDivision(e.target.value)
@@ -349,7 +432,7 @@ export default function DonorsPage() {
         <div className="space-y-1">
           <label className="text-sm font-medium">Present District</label>
           <select
-            className="w-full rounded-md border px-3 py-2 bg-white"
+            className="w-full rounded-md border bg-white px-3 py-2"
             value={presentDistrict}
             onChange={(e) => {
               setPresentDistrict(e.target.value)
@@ -357,7 +440,9 @@ export default function DonorsPage() {
             }}
             disabled={!presentDivision}
           >
-            <option value="">{presentDivision ? 'All' : 'Select division first'}</option>
+            <option value="">
+              {presentDivision ? 'All' : 'Select division first'}
+            </option>
             {presentDistrictOptions.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
@@ -370,7 +455,7 @@ export default function DonorsPage() {
         <div className="space-y-1">
           <label className="text-sm font-medium">Present Upazilla</label>
           <select
-            className="w-full rounded-md border px-3 py-2 bg-white"
+            className="w-full rounded-md border bg-white px-3 py-2"
             value={presentUpazilla}
             onChange={(e) => {
               setPresentUpazilla(e.target.value)
@@ -378,7 +463,9 @@ export default function DonorsPage() {
             }}
             disabled={!presentDistrict}
           >
-            <option value="">{presentDistrict ? 'All' : 'Select district first'}</option>
+            <option value="">
+              {presentDistrict ? 'All' : 'Select district first'}
+            </option>
             {presentUpazilaOptions.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
@@ -391,7 +478,7 @@ export default function DonorsPage() {
         <div className="space-y-1">
           <label className="text-sm font-medium">Permanent Division</label>
           <select
-            className="w-full rounded-md border px-3 py-2 bg-white"
+            className="w-full rounded-md border bg-white px-3 py-2"
             value={permanentDivision}
             onChange={(e) => {
               setPermanentDivision(e.target.value)
@@ -411,7 +498,7 @@ export default function DonorsPage() {
         <div className="space-y-1">
           <label className="text-sm font-medium">Permanent District</label>
           <select
-            className="w-full rounded-md border px-3 py-2 bg-white"
+            className="w-full rounded-md border bg-white px-3 py-2"
             value={permanentDistrict}
             onChange={(e) => {
               setPermanentDistrict(e.target.value)
@@ -419,7 +506,9 @@ export default function DonorsPage() {
             }}
             disabled={!permanentDivision}
           >
-            <option value="">{permanentDivision ? 'All' : 'Select division first'}</option>
+            <option value="">
+              {permanentDivision ? 'All' : 'Select division first'}
+            </option>
             {permanentDistrictOptions.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
@@ -432,7 +521,7 @@ export default function DonorsPage() {
         <div className="space-y-1">
           <label className="text-sm font-medium">Permanent Upazilla</label>
           <select
-            className="w-full rounded-md border px-3 py-2 bg-white"
+            className="w-full rounded-md border bg-white px-3 py-2"
             value={permanentUpazilla}
             onChange={(e) => {
               setPermanentUpazilla(e.target.value)
@@ -440,7 +529,9 @@ export default function DonorsPage() {
             }}
             disabled={!permanentDistrict}
           >
-            <option value="">{permanentDistrict ? 'All' : 'Select district first'}</option>
+            <option value="">
+              {permanentDistrict ? 'All' : 'Select district first'}
+            </option>
             {permanentUpazilaOptions.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
@@ -477,7 +568,7 @@ export default function DonorsPage() {
           />
         </div>
 
-        {/* ✅ Last Donation From */}
+        {/* Last Donation From */}
         <div className="space-y-1">
           <label className="text-sm font-medium">Last Donation From</label>
           <input
@@ -491,7 +582,7 @@ export default function DonorsPage() {
           />
         </div>
 
-        {/* ✅ Last Donation To */}
+        {/* Last Donation To */}
         <div className="space-y-1">
           <label className="text-sm font-medium">Last Donation To</label>
           <input
@@ -519,16 +610,24 @@ export default function DonorsPage() {
           Loading donors…
         </div>
       )}
-      {error && <div className="text-sm text-red-500">Error: {error.message}</div>}
+      {error && (
+        <div className="text-sm text-red-500">Error: {error.message}</div>
+      )}
 
       <GenericTable<Donor>
         title="Donor Directory"
-        description={data ? `Showing ${data.items.length} of ${data.total}` : undefined}
+        description={
+          data ? `Showing ${data.items.length} of ${data.total}` : undefined
+        }
         data={data?.items ?? []}
         columns={columns as any}
         actions={(d) => (
           <div className="flex justify-end gap-1">
-            <Button variant="ghost" size="icon" onClick={() => console.log('view', d?._id)}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => console.log('view', d?._id)}
+            >
               <Eye className="h-4 w-4" />
             </Button>
             <Button
